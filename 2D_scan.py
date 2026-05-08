@@ -1,8 +1,8 @@
 """
-2D CT 分块重叠扫描工具（配置文件版）
-====================================
+2D CT 分块重叠扫描工具（配置文件版 —— Live/Capture 流程）
+==========================================================
 读取 config.json 获取窗口标题、控件坐标等参数。
-GUI 界面的扫描范围、重叠比例等仍由用户输入。
+扫描流程：Live → 设置 X/Y/FOV → Capture → 等待 → 保存 → Live
 启动时如 config.json 缺失或格式错误会弹窗提示并退出。
 """
 
@@ -23,7 +23,6 @@ from pynput import keyboard as pynput_keyboard
 CONFIG_FILE = "config.json"
 
 def load_config():
-    """从 config.json 读取窗口标题和控件坐标，返回字典"""
     if not os.path.exists(CONFIG_FILE):
         messagebox.showerror("配置文件缺失",
                              f"未找到 {CONFIG_FILE}，请将配置文件与本程序放在同一目录。")
@@ -31,43 +30,46 @@ def load_config():
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             config = json.load(f)
-        # 简单验证必要字段
-        required_keys = ["window", "controls"]
-        for key in required_keys:
-            if key not in config:
-                raise KeyError(f"缺少必需字段: {key}")
+        # 检查必要字段
+        if "window" not in config or "controls" not in config:
+            raise KeyError("缺少 'window' 或 'controls' 字段")
+        # 检查 live/capture 按钮
+        for key in ["live_button", "capture_button"]:
+            if key not in config["controls"] or config["controls"][key] is None:
+                raise KeyError(f"配置缺少控件坐标: {key}")
         return config
     except Exception as e:
         messagebox.showerror("配置文件错误", f"读取 {CONFIG_FILE} 失败: {e}")
         sys.exit(1)
 
-# 加载配置
 config = load_config()
 
-# 窗口相关配置
+# 窗口配置
 CT_WINDOW_TITLE = config["window"]["title"]
-OFFSET_Y = config["window"].get("offset_y", 30)   # 提供默认值
+OFFSET_Y = config["window"].get("offset_y", 30)
 
-# 控件坐标（转换为元组，便于后续使用）
+# 控件坐标提取（忽略不用的 scan_button）
 controls = config["controls"]
 xInputBox      = tuple(controls["x_input"])
 yInputBox      = tuple(controls["y_input"])
 sizeInputBox   = tuple(controls["size_input"]) if controls.get("size_input") else None
-scanButton     = tuple(controls["scan_button"])
+liveButton     = tuple(controls["live_button"])
+captureButton  = tuple(controls["capture_button"])
 saveOpenBtn    = tuple(controls["save_open_button"])
 fileNameInput  = tuple(controls["file_name_input"])
 saveConfirmBtn = tuple(controls["save_confirm_button"])
 
 # ============================================================
-# 2. 全局控制变量（不变）
+# 2. 全局变量
 # ============================================================
 stop_flag = False
 window_region = None
 
 # ============================================================
-# 3. 工具函数（与之前相同，但使用已加载的坐标）
+# 3. 窗口定位与坐标转换函数
 # ============================================================
 def get_window_region():
+    # 使用标题查找窗口（可扩展 process_name，但保持简单）
     windows = pyautogui.getWindowsWithTitle(CT_WINDOW_TITLE)
     if not windows:
         raise Exception(f"未找到标题包含 '{CT_WINDOW_TITLE}' 的窗口")
@@ -90,7 +92,7 @@ def set_text(pos, text):
     pyautogui.write(str(text))
 
 # ============================================================
-# 4. 扫描主逻辑（与之前完全一致，仅引用的坐标变量已改为配置值）
+# 4. 扫描主逻辑（新流程）
 # ============================================================
 def run_scan(params):
     global stop_flag, window_region
@@ -102,19 +104,23 @@ def run_scan(params):
     ye = params['Yend']
     fov = params['FOV']
     ov = params['Overlap']
-    wait_sec = params['ScanSeconds']
+    wait_sec = params['CaptureWait']   # 捕获后等待时间（秒）
     prefix = params['FilePrefix']
 
     try:
         window_region = get_window_region()
+
+        # 转换所有控件坐标
         xi = client_to_screen(xInputBox)
         yi = client_to_screen(yInputBox)
         si = client_to_screen(sizeInputBox) if sizeInputBox else None
-        sb = client_to_screen(scanButton)
+        lb = client_to_screen(liveButton)
+        cb = client_to_screen(captureButton)
         so = client_to_screen(saveOpenBtn)
         fi = client_to_screen(fileNameInput)
         sc = client_to_screen(saveConfirmBtn)
 
+        # 计算矩阵
         step = fov * (1 - ov)
         Nx = math.floor((xe - xs) / step) + 1
         Ny = math.floor((ye - ys) / step) + 1
@@ -122,7 +128,7 @@ def run_scan(params):
 
         if not messagebox.askyesno("确认扫描",
                                    f"将扫描 {Nx} 列 × {Ny} 行 = {total} 个位置。\n"
-                                   f"步距 = {step:.2f} mm\n\n是否开始？"):
+                                   f"步距 = {step:.2f} mm\n采集等待 = {wait_sec} 秒\n\n是否开始？"):
             return
 
         count = 0
@@ -133,15 +139,23 @@ def run_scan(params):
                     return
                 yc = ys + j * step
                 count += 1
-                root.after(0, update_status, f"扫描 {count}/{total}  中心 X={xc:.1f}, Y={yc:.1f}")
+                root.after(0, update_status, f"第 {count}/{total} 块  X={xc:.1f}, Y={yc:.1f}")
 
+                # --- 新流程 ---
+                # 1. 切换到 Live 模式
+                pyautogui.click(lb)
+                time.sleep(0.3)   # 等待软件响应
+
+                # 2. 设置坐标
                 set_text(xi, xc)
                 set_text(yi, yc)
                 if si:
                     set_text(si, fov)
 
-                pyautogui.click(sb)
+                # 3. 点击 Capture 抓图
+                pyautogui.click(cb)
 
+                # 4. 等待采集完成（用户设定的时间）
                 wait_remaining = wait_sec
                 while wait_remaining > 0 and not stop_flag:
                     time.sleep(min(1, wait_remaining))
@@ -149,6 +163,7 @@ def run_scan(params):
                 if stop_flag:
                     return
 
+                # 5. 保存文件
                 pyautogui.click(so)
                 time.sleep(0.8)
                 pyautogui.click(fi)
@@ -159,6 +174,10 @@ def run_scan(params):
                 pyautogui.write(fname)
                 pyautogui.click(sc)
                 time.sleep(1)
+
+                # 6. 再次点击 Live，为下一张图像做准备或回到实时模式
+                pyautogui.click(lb)
+                time.sleep(0.3)
 
         root.after(0, scan_complete, total)
 
@@ -173,21 +192,22 @@ def scan_complete(total):
     status_var.set("就绪")
 
 # ============================================================
-# 5. GUI 界面构建（与之前完全相同，仅参数输入部分不变）
+# 5. GUI 界面（参数中改“扫描时间”为“采集等待时间”）
 # ============================================================
 root = tk.Tk()
 root.title("CT 分块扫描控制台")
 status_var = tk.StringVar(value="就绪")
 
 var_Xstart = tk.DoubleVar(value=10.0)
-var_Xend = tk.DoubleVar(value=78.0)
+var_Xend   = tk.DoubleVar(value=78.0)
 var_Ystart = tk.DoubleVar(value=5.0)
-var_Yend = tk.DoubleVar(value=55.0)
-var_FOV = tk.DoubleVar(value=20.0)
+var_Yend   = tk.DoubleVar(value=55.0)
+var_FOV    = tk.DoubleVar(value=20.0)
 var_Overlap = tk.DoubleVar(value=0.15)
-var_ScanSeconds = tk.DoubleVar(value=480)
-var_FilePrefix = tk.StringVar(value="SampleA_")
+var_CaptureWait = tk.DoubleVar(value=2.0)   # 默认 2 秒
+var_FilePrefix  = tk.StringVar(value="SampleA_")
 
+# 参数分组框
 frame = tk.LabelFrame(root, text="扫描范围与参数", padx=10, pady=10)
 frame.pack(padx=10, pady=5, fill="x")
 
@@ -206,15 +226,17 @@ tk.Entry(frame, textvariable=var_FOV, width=8).grid(row=2, column=1)
 tk.Label(frame, text="重叠比例 (0~1):").grid(row=2, column=2, sticky="e", padx=(20,0))
 tk.Entry(frame, textvariable=var_Overlap, width=8).grid(row=2, column=3)
 
-tk.Label(frame, text="扫描时间 (s):").grid(row=3, column=0, sticky="e")
-tk.Entry(frame, textvariable=var_ScanSeconds, width=8).grid(row=3, column=1)
+tk.Label(frame, text="采集等待时间 (s):").grid(row=3, column=0, sticky="e")
+tk.Entry(frame, textvariable=var_CaptureWait, width=8).grid(row=3, column=1)
 
+# 文件保存
 frame2 = tk.LabelFrame(root, text="文件保存", padx=10, pady=10)
 frame2.pack(padx=10, pady=5, fill="x")
 tk.Label(frame2, text="文件名前缀:").pack(side="left")
 tk.Entry(frame2, textvariable=var_FilePrefix, width=15).pack(side="left", padx=5)
 tk.Label(frame2, text="(自动追加三位编号)").pack(side="left")
 
+# 按钮
 btn_frame = tk.Frame(root)
 btn_frame.pack(pady=5)
 tk.Button(btn_frame, text="开始扫描", width=12, command=lambda: start_scan_thread()).pack(side="left", padx=5)
@@ -236,19 +258,20 @@ def start_scan_thread():
         'Yend': var_Yend.get(),
         'FOV': var_FOV.get(),
         'Overlap': var_Overlap.get(),
-        'ScanSeconds': var_ScanSeconds.get(),
+        'CaptureWait': var_CaptureWait.get(),
         'FilePrefix': var_FilePrefix.get()
     }
+    # 基本检查
     if params['Xend'] <= params['Xstart'] or params['Yend'] <= params['Ystart']:
         messagebox.showerror("参数错误", "终点必须大于起点")
         return
-    if params['FOV'] <= 0 or params['Overlap'] < 0 or params['Overlap'] >= 1 or params['ScanSeconds'] <= 0:
-        messagebox.showerror("参数错误", "视野>0，重叠比例0~1(不含1)，扫描时间>0")
+    if params['FOV'] <= 0 or params['Overlap'] < 0 or params['Overlap'] >= 1 or params['CaptureWait'] <= 0:
+        messagebox.showerror("参数错误", "视野>0，重叠比例0~1(不含1)，采集等待时间>0")
         return
     t = threading.Thread(target=run_scan, args=(params,), daemon=True)
     t.start()
 
-# 热键
+# 全局 Esc 热键
 def on_press(key):
     global stop_flag
     if key == pynput_keyboard.Key.esc:
