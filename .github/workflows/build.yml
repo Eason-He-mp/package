@@ -24,7 +24,7 @@ jobs:
 
       - name: 打包成单文件 EXE
         run: |
-          pyinstaller --onefile --windowed --name CT_Scan_Tool ct_scan_gui.py
+          pyinstaller --onefile --windowed --name CT_Scan_Tool 2D scan.py
 
       - name: 上传 EXE
         uses: actions/upload-artifact@v4
