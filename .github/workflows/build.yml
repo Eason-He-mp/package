@@ -5,11 +5,11 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2025     # 使用 GitHub 的 Windows 虚拟机
+    runs-on: windows-2025-vs2026     # 使用 GitHub 的 Windows 虚拟机
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: 设置 Python
         uses: actions/setup-python@v6
