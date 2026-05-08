@@ -1,13 +1,14 @@
 {
   "window": {
-    "title": "你的CT软件窗口标题",
+    "title": "CT软件窗口标题",
     "offset_y": 30
   },
   "controls": {
     "x_input": [150, 120],
     "y_input": [150, 160],
     "size_input": null,
-    "scan_button": [400, 500],
+    "live_button": [400, 300],
+    "capture_button": [400, 350],
     "save_open_button": [320, 500],
     "file_name_input": [200, 300],
     "save_confirm_button": [350, 400]
