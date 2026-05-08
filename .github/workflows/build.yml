@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2025-vs2026     # 使用 GitHub 的 Windows 虚拟机
+    runs-on: windows-2022     # 使用 GitHub 的 Windows 虚拟机
 
     steps:
       - name: 检出代码
@@ -15,6 +15,7 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+          architecture: 'x86'
 
       - name: 安装依赖
         run: |
