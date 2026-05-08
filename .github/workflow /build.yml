@@ -1,0 +1,33 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:            # 也可以在网页上手动点按钮打包
+
+jobs:
+  build:
+    runs-on: windows-latest     # 使用 GitHub 的 Windows 虚拟机
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 打包成单文件 EXE
+        run: |
+          pyinstaller --onefile --windowed --name CT_Scan_Tool ct_scan_gui.py
+
+      - name: 上传 EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: CT_Scan_Tool_Windows
+          path: dist/CT_Scan_Tool.exe
