@@ -22,12 +22,19 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: 打包成单文件 EXE
+      - name: 打包CT扫描程序
         run: |
           pyinstaller --onefile --windowed --name CT_Scan_Tool 2D_scan.py
+          
+      - name: 打包坐标抓取器
+        run: pyinstaller --onefile --windowed --name GetCoords get_coords.py
 
-      - name: 上传 EXE
-        uses: actions/upload-artifact@v5
+      - name: 上传所有 EXE
+        uses: actions/upload-artifact@v6
         with:
-          name: CT_Scan_Tool_Windows
-          path: dist/CT_Scan_Tool.exe
+          name: CT_Tools_Package
+          path: |
+            dist/CT_Scan_Tool.exe
+            dist/GetCoords.exe
+          
+      
