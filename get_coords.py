@@ -1,40 +1,170 @@
 """
-鼠标坐标抓取工具（Windows 版）
-==============================
-功能：在屏幕左上角实时显示鼠标的屏幕绝对坐标和窗口客户区坐标。
-     按 F12 复制当前窗口客户区坐标到剪贴板，按 Esc 退出。
-用法：python get_coords.py    或者    打包后的 .exe 直接运行
-依赖：pyautogui, pynput, tkinter
-注意：客户区坐标基于当前鼠标所在窗口，无需安装额外库即可在 Windows 上运行。
+鼠标坐标抓取工具（Windows GUI 版）
+================================
+功能：在屏幕左上角显示一个半透明窗口，实时展示鼠标的屏幕绝对坐标和窗口客户区坐标。
+      按 F12 复制当前客户区坐标到剪贴板，并弹窗提示。
+      按 Esc 退出程序。
+用法：python get_coords.py    或    打包后的 .exe 直接运行
+依赖：pyautogui, pynput, pyperclip, tkinter (标准库)
+注意：客户区坐标基于当前鼠标所在窗口，仅在 Windows 上可用（使用了 Win32 API）。
 """
 
-import tkinter as tk
-import threading
-import time
-import ctypes
 import sys
-
-# 如果要在 Windows 上获取客户区坐标，需要 ctypes 调用系统 API
-from ctypes import wintypes
-
-# 使用 pynput 进行全局热键监听（不依赖焦点）
+import tkinter as tk
+from tkinter import messagebox          # 用于弹窗提示
+import threading
+import pyautogui
 from pynput import keyboard as pynput_keyboard
 
-# 使用 pyautogui 获取鼠标屏幕坐标（和主程序一致，打包时会一并包含）
-import pyautogui
+# Windows 平台专属的 API 调用
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
 
 # ============================================================
-# Windows API 函数声明（用于获取客户区坐标）
+# 获取客户区坐标的底层函数
 # ============================================================
-# 获取当前鼠标位置的屏幕坐标
-GetCursorPos = ctypes.windll.user32.GetCursorPos
-# 获取鼠标所在窗口的句柄（从屏幕坐标得到窗口句柄）
-WindowFromPoint = ctypes.windll.user32.WindowFromPoint
-# 获取指定窗口的客户区矩形（左上角坐标相对于屏幕）
-GetClientRect = ctypes.windll.user32.GetClientRect
-# 将屏幕坐标转换为窗口客户区坐标
-ScreenToClient = ctypes.windll.user32.ScreenToClient
+def get_client_coords():
+    """
+    返回当前鼠标所在窗口的客户区坐标。
+    仅在 Windows 下有效，非 Windows 返回 (-1, -1)。
+    """
+    if sys.platform != "win32":
+        return -1, -1
+    try:
+        # 获取鼠标屏幕坐标
+        pt = wintypes.POINT()
+        ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+        # 获取鼠标点所在的窗口句柄
+        hwnd = ctypes.windll.user32.WindowFromPoint(pt)
+        if hwnd:
+            # 将屏幕坐标转换为客户区坐标
+            ctypes.windll.user32.ScreenToClient(hwnd, ctypes.byref(pt))
+            return pt.x, pt.y
+    except Exception:
+        pass
+    return -1, -1
 
+# ============================================================
+# 主界面：半透明置顶窗口
+# ============================================================
+class CoordOverlay:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Mouse Coords")
+        # 窗口始终置顶
+        self.root.attributes("-topmost", True)
+        # 去掉标题栏和边框，做成小工具样式
+        self.root.overrideredirect(True)
+        self.root.configure(bg="black")
+        # 半透明（0.85 透明度）
+        self.root.attributes("-alpha", 0.85)
+
+        # 系统平台提示（非 Windows 无法获取客户区坐标）
+        if sys.platform != "win32":
+            self.client_label_text = "Client: N/A (Windows only)"
+        else:
+            self.client_label_text = "Client: -1, -1"
+
+        # 屏幕坐标显示
+        self.screen_label = tk.Label(
+            self.root,
+            text="Screen: 0, 0",
+            fg="cyan",
+            bg="black",
+            font=("Consolas", 10),
+            anchor="w"
+        )
+        self.screen_label.pack(fill="x", padx=5, pady=(5, 0))
+
+        # 客户区坐标显示
+        self.client_label = tk.Label(
+            self.root,
+            text=self.client_label_text,
+            fg="lime",
+            bg="black",
+            font=("Consolas", 10, "bold"),
+            anchor="w"
+        )
+        self.client_label.pack(fill="x", padx=5, pady=(0, 0))
+
+        # 操作提示行
+        hint_text = "F12: 复制客户区坐标 | Esc: 退出"
+        self.hint_label = tk.Label(
+            self.root,
+            text=hint_text,
+            fg="gray",
+            bg="black",
+            font=("Consolas", 8),
+            anchor="w"
+        )
+        self.hint_label.pack(fill="x", padx=5, pady=(2, 5))
+
+        # 设置窗口初始大小，放在屏幕左上角
+        self.root.geometry("280x70+10+10")
+
+        # 开始循环更新坐标显示
+        self.update_coords()
+
+    def update_coords(self):
+        """每 100ms 刷新一次坐标显示"""
+        screen_x, screen_y = pyautogui.position()
+        client_x, client_y = get_client_coords()
+        self.screen_label.config(text=f"Screen: {screen_x}, {screen_y}")
+        if client_x != -1:
+            self.client_label.config(text=f"Client: {client_x}, {client_y}")
+        else:
+            self.client_label.config(text=self.client_label_text)
+        self.root.after(100, self.update_coords)
+
+    def run(self):
+        self.root.mainloop()
+
+# ============================================================
+# 全局热键处理
+# ============================================================
+def on_press(key):
+    try:
+        if key == pynput_keyboard.Key.f12:
+            # 获取当前客户区坐标
+            client_x, client_y = get_client_coords()
+            if client_x == -1 and sys.platform == "win32":
+                messagebox.showwarning("警告", "无法获取客户区坐标，请确认鼠标在窗口内。")
+                return
+            coords_str = f"{client_x}, {client_y}"
+            # 复制到剪贴板
+            try:
+                import pyperclip
+                pyperclip.copy(coords_str)
+            except ImportError:
+                # 如果没有 pyperclip，回退到 Windows 的 clip 命令
+                import subprocess
+                subprocess.run("clip", input=coords_str.encode(), check=True)
+            # 弹窗提示
+            messagebox.showinfo(
+                "坐标已复制",
+                f"客户区坐标已复制到剪贴板：\n{coords_str}"
+            )
+        elif key == pynput_keyboard.Key.esc:
+            # 退出程序
+            overlay.root.quit()
+            return False   # 停止监听器
+    except Exception as e:
+        messagebox.showerror("错误", f"热键处理出错：{e}")
+
+# ============================================================
+# 主程序入口
+# ============================================================
+if __name__ == "__main__":
+    # 仅在 Windows 上运行客户区坐标抓取，但界面仍可启动（其他系统显示 N/A）
+    overlay = CoordOverlay()
+
+    # 启动键盘监听（后台线程）
+    listener = pynput_keyboard.Listener(on_press=on_press)
+    listener.start()
+
+    # 进入 GUI 主循环
+    overlay.run()
 def get_client_coords():
     """
     获取当前鼠标所在窗口的客户区坐标。
