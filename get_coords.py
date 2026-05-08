@@ -101,7 +101,7 @@ class CoordOverlay:
         self.hint_label.pack(fill="x", padx=5, pady=(2, 5))
 
         # 设置窗口初始大小，放在屏幕左上角
-        self.root.geometry("280x70+10+10")
+        self.root.geometry("280x100+10+10")
 
         # 开始循环更新坐标显示
         self.update_coords()
