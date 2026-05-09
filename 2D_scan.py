@@ -108,17 +108,18 @@ def run_scan(params):
     prefix = params['FilePrefix']
 
     try:
-        window_region = get_window_region()
+        # 激活目标窗口（只用于保证界面在最前，不用于坐标转换）
+        windows = pyautogui.getWindowsWithTitle(CT_WINDOW_TITLE)
+        if not windows:
+            raise Exception("未找到目标窗口")
+        windows[0].activate()
+        time.sleep(0.3)
 
-        # 转换所有控件坐标
-        xi = client_to_screen(xInputBox)
-        yi = client_to_screen(yInputBox)
-        si = client_to_screen(sizeInputBox) if sizeInputBox else None
-        lb = client_to_screen(liveButton)
-        cb = client_to_screen(captureButton)
-        so = client_to_screen(saveOpenBtn)
-        fi = client_to_screen(fileNameInput)
-        sc = client_to_screen(saveConfirmBtn)
+        # 直接使用屏幕坐标（config 里已经是抓取的绝对坐标）
+        xi, yi = xInputBox, yInputBox
+        si = sizeInputBox
+        lb, cb = liveButton, captureButton
+        so, fi, sc = saveOpenBtn, fileNameInput, saveConfirmBtn
 
         # 计算矩阵
         step = fov * (1 - ov)
