@@ -1,7 +1,6 @@
 {
   "window": {
-    "title": "CT软件窗口标题",
-    "offset_y": 30
+    "title": "CT软件窗口标题"
   },
   "controls": {
     "x_input": [150, 120],
