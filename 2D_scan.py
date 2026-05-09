@@ -28,7 +28,7 @@ def load_config():
                              f"未找到 {CONFIG_FILE}，请将配置文件与本程序放在同一目录。")
         sys.exit(1)
     try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        with open(CONFIG_FILE, "r", encoding="utf-8-sig") as f:
             config = json.load(f)
         # 检查必要字段
         if "window" not in config or "controls" not in config:
