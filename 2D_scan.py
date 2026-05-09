@@ -1,9 +1,11 @@
 """
-2D CT 分块重叠扫描工具（屏幕绝对坐标版 + 移动等待参数）
+2D CT 分块重叠扫描工具（屏幕绝对坐标版 + 移动确认按钮）
 ==========================================================
-读取 config.json 获取窗口标题、控件屏幕坐标等参数。
-扫描流程：Live → 设置 X/Y → 等待 CNC 移动 → Capture → 等待采集 → 保存 → Live
-启动时如 config.json 缺失或格式错误会弹窗提示并退出。
+功能：读取 config.json 获取窗口标题、控件屏幕坐标等参数。
+      扫描流程：Live → 设置 X/Y → 点击移动确认 → 等待 CNC 移动 → Capture → 等待采集 → 保存 → Live
+      支持 Esc 紧急停止，停止后鼠标回到屏幕中心 (1200, 600)。
+用法：python 2D_scan.py    或    打包后的 .exe 直接运行
+依赖：pyautogui, pynput, pyperclip, tkinter (标准库)
 """
 
 import sys
@@ -17,7 +19,7 @@ import math
 import pyautogui
 from pynput import keyboard as pynput_keyboard
 
-# 禁用 fail-safe，使用 Esc 热键停止
+# 禁用 PyAutoGUI 的 fail-safe（改用 Esc 停止）
 pyautogui.FAILSAFE = False
 
 # ============================================================
@@ -31,35 +33,39 @@ def load_config():
                              f"未找到 {CONFIG_FILE}，请将配置文件与本程序放在同一目录。")
         sys.exit(1)
     try:
-        with open(CONFIG_FILE, "r", encoding="utf-8-sig") as f:   # 兼容 BOM
+        # 使用 utf-8-sig 自动跳过 BOM
+        with open(CONFIG_FILE, "r", encoding="utf-8-sig") as f:
             config = json.load(f)
         # 检查必要字段
         if "window" not in config or "controls" not in config:
             raise KeyError("缺少 'window' 或 'controls' 字段")
-        # 检查 live/capture 按钮
-        for key in ["live_button", "capture_button"]:
-            if key not in config["controls"] or config["controls"][key] is None:
-                raise KeyError(f"配置缺少控件坐标: {key}")
+        # 检查必须的按钮坐标
+        required_buttons = ["live_button", "capture_button", "move_confirm_button"]
+        for btn in required_buttons:
+            if btn not in config["controls"] or config["controls"][btn] is None:
+                raise KeyError(f"配置缺少控件坐标: {btn}")
         return config
     except Exception as e:
         messagebox.showerror("配置文件错误", f"读取 {CONFIG_FILE} 失败: {e}")
         sys.exit(1)
 
+# 加载配置
 config = load_config()
 
-# 窗口配置（仅用于激活窗口）
+# 窗口标题（仅用于激活窗口）
 CT_WINDOW_TITLE = config["window"]["title"]
 
-# 控件坐标（直接使用屏幕绝对坐标，不再转换）
+# 控件屏幕绝对坐标（从 GetCoords 抓取，直接使用）
 controls = config["controls"]
-xInputBox      = tuple(controls["x_input"])
-yInputBox      = tuple(controls["y_input"])
-sizeInputBox   = tuple(controls["size_input"]) if controls.get("size_input") else None
-liveButton     = tuple(controls["live_button"])
-captureButton  = tuple(controls["capture_button"])
-saveOpenBtn    = tuple(controls["save_open_button"])
-fileNameInput  = tuple(controls["file_name_input"])
-saveConfirmBtn = tuple(controls["save_confirm_button"])
+xInputBox        = tuple(controls["x_input"])
+yInputBox        = tuple(controls["y_input"])
+sizeInputBox     = tuple(controls["size_input"]) if controls.get("size_input") else None
+liveButton       = tuple(controls["live_button"])
+captureButton    = tuple(controls["capture_button"])
+moveConfirmBtn   = tuple(controls["move_confirm_button"])  # 新增：移动确认按钮
+saveOpenBtn      = tuple(controls["save_open_button"])
+fileNameInput    = tuple(controls["file_name_input"])
+saveConfirmBtn   = tuple(controls["save_confirm_button"])
 
 # ============================================================
 # 2. 全局变量
@@ -67,21 +73,21 @@ saveConfirmBtn = tuple(controls["save_confirm_button"])
 stop_flag = False
 
 # ============================================================
-# 3. 窗口激活函数
+# 3. 窗口激活与辅助函数
 # ============================================================
 def activate_target_window():
     """激活 CT 软件窗口，确保操作落在上面"""
     windows = pyautogui.getWindowsWithTitle(CT_WINDOW_TITLE)
     if not windows:
         raise Exception(f"未找到标题包含 '{CT_WINDOW_TITLE}' 的窗口")
-    windows[0].activate()
-    time.sleep(0.3)
+    win = windows[0]
+    if win.isMinimized:
+        win.restore()
+    win.activate()
+    time.sleep(0.5)          # 适当延长等待，保证窗口完全获得焦点
 
-# ============================================================
-# 4. 输入文本辅助函数
-# ============================================================
 def set_text(pos, text):
-    """点击文本框，清空并输入新内容"""
+    """点击输入框，清空并输入新内容"""
     pyautogui.click(pos[0], pos[1])
     time.sleep(0.1)
     pyautogui.hotkey('ctrl', 'a')
@@ -89,11 +95,12 @@ def set_text(pos, text):
     pyautogui.write(str(text))
 
 # ============================================================
-# 5. 扫描主逻辑（增加移动等待）
+# 4. 扫描主逻辑
 # ============================================================
 def run_scan(params):
     global stop_flag
     stop_flag = False
+    root.withdraw()   # 隐藏主窗口，防止误触
 
     xs = params['Xstart']
     xe = params['Xend']
@@ -106,13 +113,14 @@ def run_scan(params):
     prefix = params['FilePrefix']
 
     try:
-        # 激活窗口
+        # 激活 CT 窗口
         activate_target_window()
 
-        # 取用屏幕绝对坐标
+        # 全部使用屏幕绝对坐标
         xi, yi = xInputBox, yInputBox
         si = sizeInputBox
         lb, cb = liveButton, captureButton
+        mc = moveConfirmBtn
         so, fi, sc = saveOpenBtn, fileNameInput, saveConfirmBtn
 
         # 计算扫描矩阵
@@ -125,6 +133,7 @@ def run_scan(params):
                                    f"将扫描 {Nx} 列 × {Ny} 行 = {total} 个位置。\n"
                                    f"步距 = {step:.2f} mm\n"
                                    f"采集等待 = {capture_wait} s  |  移动等待 = {move_wait} s\n\n是否开始？"):
+            root.deiconify()  # 如果取消，恢复主窗口
             return
 
         count = 0
@@ -132,44 +141,46 @@ def run_scan(params):
             xc = xs + i * step
             for j in range(Ny):
                 if stop_flag:
-                    return
+                    break
                 yc = ys + j * step
                 count += 1
                 root.after(0, update_status, f"第 {count}/{total} 块  X={xc:.1f}, Y={yc:.1f}")
 
-                # ---------- 新流程 ----------
-                # 1. 切换到 Live 模式（如果需要，也可以放在移动之后，按你软件特性）
+                # ---------- 扫描流程 ----------
+                # 1. 切换到 Live 模式
                 pyautogui.click(lb)
                 time.sleep(0.2)
 
-                # 2. 设置 X 和 Y 坐标
+                # 2. 设置坐标
                 set_text(xi, xc)
                 set_text(yi, yc)
                 if si:
                     set_text(si, fov)
 
-                # 3. 等待 CNC 移动到位（可自定义参数）
+                # 3. 点击“确认移动”按钮，让 CNC 执行移动指令
+                pyautogui.click(mc[0], mc[1])
+                time.sleep(0.2)
+
+                # 4. 等待 CNC 移动到位（可自定义时间）
                 if move_wait > 0:
-                    # 分段等待，允许中途停止
                     remaining = move_wait
                     while remaining > 0 and not stop_flag:
                         time.sleep(min(1, remaining))
                         remaining -= 1
-                    if stop_flag:
-                        return
+                if stop_flag:
+                    break
 
-                # 4. 点击 Capture 抓图
+                # 5. 点击 Capture 抓图
                 pyautogui.click(cb)
-
-                # 5. 等待采集完成（用户设定的采集时间）
+                # 6. 等待采集完成
                 remaining = capture_wait
                 while remaining > 0 and not stop_flag:
                     time.sleep(min(1, remaining))
                     remaining -= 1
                 if stop_flag:
-                    return
+                    break
 
-                # 6. 保存文件
+                # 7. 保存图像
                 pyautogui.click(so)
                 time.sleep(0.8)
                 pyautogui.click(fi)
@@ -181,15 +192,27 @@ def run_scan(params):
                 pyautogui.click(sc)
                 time.sleep(1)
 
-                # 7. 再次点击 Live，为下一次移动做准备（或保持实时状态）
+                # 8. 再次点击 Live，准备下一次移动
                 pyautogui.click(lb)
                 time.sleep(0.2)
 
-        root.after(0, scan_complete, total)
+            if stop_flag:
+                break
+
+        if stop_flag:
+            root.after(0, lambda: status_var.set("已停止"))
+        else:
+            root.after(0, scan_complete, total)
 
     except Exception as e:
         root.after(0, lambda err=str(e): messagebox.showerror("错误", err))
+    finally:
+        # 无论如何都恢复主窗口
+        root.after(0, root.deiconify)
 
+# ============================================================
+# 5. GUI 状态更新函数
+# ============================================================
 def update_status(msg):
     status_var.set(msg)
 
@@ -198,24 +221,24 @@ def scan_complete(total):
     status_var.set("就绪")
 
 # ============================================================
-# 6. GUI 界面（增加“移动等待时间”输入框）
+# 6. 构建图形界面
 # ============================================================
 root = tk.Tk()
 root.title("CT 分块扫描控制台")
 status_var = tk.StringVar(value="就绪")
 
-# 变量绑定
+# 变量
 var_Xstart = tk.DoubleVar(value=10.0)
 var_Xend   = tk.DoubleVar(value=78.0)
 var_Ystart = tk.DoubleVar(value=5.0)
 var_Yend   = tk.DoubleVar(value=55.0)
 var_FOV    = tk.DoubleVar(value=20.0)
 var_Overlap = tk.DoubleVar(value=0.15)
-var_CaptureWait = tk.DoubleVar(value=2.0)      # 采集等待
-var_MoveWait    = tk.DoubleVar(value=2.0)      # 移动等待
+var_CaptureWait = tk.DoubleVar(value=2.0)
+var_MoveWait    = tk.DoubleVar(value=2.0)
 var_FilePrefix  = tk.StringVar(value="SampleA_")
 
-# 参数区域
+# 界面布局
 frame = tk.LabelFrame(root, text="扫描范围与参数", padx=10, pady=10)
 frame.pack(padx=10, pady=5, fill="x")
 
@@ -239,7 +262,7 @@ tk.Entry(frame, textvariable=var_CaptureWait, width=8).grid(row=3, column=1)
 tk.Label(frame, text="移动等待时间 (s):").grid(row=3, column=2, sticky="e", padx=(20,0))
 tk.Entry(frame, textvariable=var_MoveWait, width=8).grid(row=3, column=3)
 
-# 文件保存
+# 文件保存区
 frame2 = tk.LabelFrame(root, text="文件保存", padx=10, pady=10)
 frame2.pack(padx=10, pady=5, fill="x")
 tk.Label(frame2, text="文件名前缀:").pack(side="left")
@@ -255,6 +278,7 @@ tk.Button(btn_frame, text="退出", width=8, command=root.quit).pack(side="left"
 
 tk.Label(root, textvariable=status_var, bd=1, relief="sunken", anchor="w").pack(fill="x", padx=10, pady=5)
 
+# 停止按钮与启动线程
 def set_stop():
     global stop_flag
     stop_flag = True
@@ -282,14 +306,23 @@ def start_scan_thread():
     t = threading.Thread(target=run_scan, args=(params,), daemon=True)
     t.start()
 
-# 全局 Esc 热键
+# ============================================================
+# 7. 全局热键 Esc：停止并移动鼠标到屏幕中心
+# ============================================================
 def on_press(key):
     global stop_flag
     if key == pynput_keyboard.Key.esc:
         stop_flag = True
-        root.after(0, lambda: status_var.set("紧急停止！"))
+        try:
+            pyautogui.moveTo(1200, 600)   # 鼠标回到指定屏幕中心
+        except Exception:
+            pass
+        root.after(0, lambda: status_var.set("紧急停止！鼠标已移到 (1200,600)"))
+        # 确保主窗口显示
+        root.after(0, root.deiconify)
 
 listener = pynput_keyboard.Listener(on_press=on_press)
 listener.start()
 
+# 启动 GUI 主循环
 root.mainloop()
