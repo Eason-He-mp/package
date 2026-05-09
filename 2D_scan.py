@@ -1,15 +1,17 @@
 """
-2D CT 分块重叠扫描工具（自定义默认值版）
-========================================
+2D CT 分块重叠扫描工具（X 递减 · Y 递增 · 统一逻辑版）
+========================================================
 功能：
   - 读取 config.json 获取窗口标题、控件屏幕绝对坐标
-  - GUI 中输入第一个扫描中心（起点）、期望覆盖的终点、视野、重叠、等待时间等
-  - 自动计算扫描序列：起点作为第一个中心，步进叠加，直到视野完全覆盖终点
-  - 行优先扫描：外层固定 Y，内层遍历 X；每行开始时设置 Y 并确认移动，
-    内层每个扫描块只设置 X 并确认移动
+  - GUI 中输入扫描范围：
+      X 起点（较大值）→ X 终点（较小值），为从左到右的视野范围，扫描时从大到小
+      Y 起点（较小值）→ Y 终点（较大值），从下到上扫描
+  - 步长计算：绝对步长 = 视野 × (1 - 重叠)，X 方向取负值，Y 方向取正值
+  - 循环生成中心序列，直至中心坐标越过终点（X：不大于终点；Y：不小于终点）
+  - 行优先扫描：外层 Y 递增，内层 X 递减；每行开始时设置 Y 并确认移动，内层只设 X
   - 视野大小仅在开始时设置一次
-  - Esc 热键紧急停止，停止后鼠标移至 (1200, 600)
-  - 扫描时隐藏主窗口，防止焦点错乱
+  - Esc 紧急停止，停止后鼠标移至 (1200, 600)
+  - 扫描时隐藏主窗口
 依赖：pyautogui, pynput, tkinter
 """
 
@@ -89,17 +91,17 @@ def set_text(pos, text):
     pyautogui.write(str(text))
 
 # ============================================================
-# 4. 扫描主逻辑
+# 4. 扫描主逻辑（X 递减，Y 递增，统一循环条件）
 # ============================================================
 def run_scan(params):
     global stop_flag
     stop_flag = False
     root.withdraw()
 
-    xs = params['Xstart']
-    xe = params['Xend']
-    ys = params['Ystart']
-    ye = params['Yend']
+    xs = params['Xstart']               # X 起点（较大值，视野左侧）
+    xe = params['Xend']                 # X 终点（较小值，视野右侧）
+    ys = params['Ystart']               # Y 起点（较小值，视野下侧）
+    ye = params['Yend']                 # Y 终点（较大值，视野上侧）
     fov = params['FOV']
     ov = params['Overlap']
     capture_wait = params['CaptureWait']
@@ -115,24 +117,24 @@ def run_scan(params):
         mc = moveConfirmBtn
         so, fi, sc = saveOpenBtn, fileNameInput, saveConfirmBtn
 
-        # ---------- 生成扫描中心序列（自动覆盖终点）----------
-        step = fov * (1 - ov)
+        # ---------- 生成扫描中心序列 ----------
+        step_abs = fov * (1 - ov)       # 绝对步长
 
+        # ---- X 方向：递减（步长取负值）----
+        step_x = -step_abs              # 负数，使坐标逐渐减小
         Xcenters = []
         xc = xs
-        while True:
+        while xc > xe:                  # 只要中心还在终点右侧，继续扫描
             Xcenters.append(xc)
-            if xc + fov/2 >= xe:
-                break
-            xc += step
+            xc += step_x                # 实际上 xc 减小
 
+        # ---- Y 方向：递增（步长取正值）----
+        step_y = step_abs               # 正数，使坐标逐渐增大
         Ycenters = []
         yc = ys
-        while True:
+        while yc < ye:                  # 只要中心还在终点下侧，继续扫描
             Ycenters.append(yc)
-            if yc + fov/2 >= ye:
-                break
-            yc += step
+            yc += step_y
 
         Nx = len(Xcenters)
         Ny = len(Ycenters)
@@ -140,21 +142,21 @@ def run_scan(params):
 
         if not messagebox.askyesno("确认扫描",
                                    f"将扫描 {Nx} 列 × {Ny} 行 = {total} 个位置。\n"
-                                   f"步距 = {step:.2f} mm\n"
+                                   f"X 步距 = {step_abs:.2f} mm（递减）\n"
+                                   f"Y 步距 = {step_abs:.2f} mm（递增）\n"
                                    f"采集等待 = {capture_wait} s  |  移动等待 = {move_wait} s\n\n是否开始？"):
             root.deiconify()
             return
 
-        # 一次性设置视野大小
+        # ---------- 一次性设置 ----------
         if si:
             set_text(si, fov)
             time.sleep(0.3)
 
-        # 初始 Live
-        pyautogui.click(lb)
+        pyautogui.click(lb)          # 初始 Live
         time.sleep(0.2)
 
-        # ===== 主扫描循环：行优先 =====
+        # ===== 主扫描循环：行优先（Y 递增，X 递减）=====
         count = 0
         for yc in Ycenters:
             # 设置本行 Y 坐标
@@ -183,7 +185,7 @@ def run_scan(params):
                 # 设置 X 坐标
                 set_text(xi, xc)
 
-                # 确认移动 X
+                # 确认移动
                 pyautogui.click(mc)
                 time.sleep(0.2)
 
@@ -234,7 +236,7 @@ def run_scan(params):
         root.after(0, root.deiconify)
 
 # ============================================================
-# 5. GUI 更新
+# 5. GUI 更新函数
 # ============================================================
 def update_status(msg):
     status_var.set(msg)
@@ -244,20 +246,17 @@ def scan_complete(total):
     status_var.set("就绪")
 
 # ============================================================
-# 6. 构建界面（自定义默认值）
+# 6. 构建界面
 # ============================================================
 root = tk.Tk()
 root.title("CT 分块扫描控制台")
 status_var = tk.StringVar(value="就绪")
 
-# 需要用户自行输入的参数：起点、终点、视野 —— 使用 StringVar 以便为空
 var_Xstart = tk.StringVar(value="")
 var_Xend   = tk.StringVar(value="")
 var_Ystart = tk.StringVar(value="")
 var_Yend   = tk.StringVar(value="")
 var_FOV    = tk.StringVar(value="")
-
-# 有默认值的参数
 var_Overlap = tk.DoubleVar(value=0.15)
 var_CaptureWait = tk.DoubleVar(value=10)
 var_MoveWait    = tk.DoubleVar(value=5)
@@ -266,38 +265,34 @@ var_FilePrefix  = tk.StringVar(value="SampleA_")
 frame = tk.LabelFrame(root, text="扫描范围与参数", padx=10, pady=10)
 frame.pack(padx=10, pady=5, fill="x")
 
-# 第一行：X 起点/终点
+# X 轴：起点（大值），终点（小值）
 tk.Label(frame, text="X 轴起点 (mm):").grid(row=0, column=0, sticky="e")
 tk.Entry(frame, textvariable=var_Xstart, width=8).grid(row=0, column=1)
 tk.Label(frame, text="X 轴终点 (mm):").grid(row=0, column=2, sticky="e", padx=(20,0))
 tk.Entry(frame, textvariable=var_Xend, width=8).grid(row=0, column=3)
 
-# 第二行：Y 起点/终点
+# Y 轴：起点（小值），终点（大值）
 tk.Label(frame, text="Y 轴起点 (mm):").grid(row=1, column=0, sticky="e")
 tk.Entry(frame, textvariable=var_Ystart, width=8).grid(row=1, column=1)
 tk.Label(frame, text="Y 轴终点 (mm):").grid(row=1, column=2, sticky="e", padx=(20,0))
 tk.Entry(frame, textvariable=var_Yend, width=8).grid(row=1, column=3)
 
-# 第三行：视野大小 + 重叠比例
 tk.Label(frame, text="视野大小 (mm):").grid(row=2, column=0, sticky="e")
 tk.Entry(frame, textvariable=var_FOV, width=8).grid(row=2, column=1)
 tk.Label(frame, text="重叠比例 (0~1):").grid(row=2, column=2, sticky="e", padx=(20,0))
 tk.Entry(frame, textvariable=var_Overlap, width=8).grid(row=2, column=3)
 
-# 第四行：等待时间
 tk.Label(frame, text="采集等待时间 (s):").grid(row=3, column=0, sticky="e")
 tk.Entry(frame, textvariable=var_CaptureWait, width=8).grid(row=3, column=1)
 tk.Label(frame, text="移动等待时间 (s):").grid(row=3, column=2, sticky="e", padx=(20,0))
 tk.Entry(frame, textvariable=var_MoveWait, width=8).grid(row=3, column=3)
 
-# 文件保存
 frame2 = tk.LabelFrame(root, text="文件保存", padx=10, pady=10)
 frame2.pack(padx=10, pady=5, fill="x")
 tk.Label(frame2, text="文件名前缀:").pack(side="left")
 tk.Entry(frame2, textvariable=var_FilePrefix, width=15).pack(side="left", padx=5)
 tk.Label(frame2, text="(自动追加三位编号)").pack(side="left")
 
-# 按钮
 btn_frame = tk.Frame(root)
 btn_frame.pack(pady=5)
 tk.Button(btn_frame, text="开始扫描", width=12, command=lambda: start_scan_thread()).pack(side="left", padx=5)
@@ -312,7 +307,6 @@ def set_stop():
     status_var.set("正在停止...")
 
 def start_scan_thread():
-    # 将字符串参数转换为浮点数，若为空或非法则报错
     try:
         xs = float(var_Xstart.get())
         xe = float(var_Xend.get())
@@ -330,9 +324,16 @@ def start_scan_thread():
     if not prefix:
         prefix = "Scan"
 
-    if xe <= xs or ye <= ys:
-        messagebox.showerror("参数错误", "终点必须大于起点")
+    # X 轴检查：起点必须大于终点（从左到右为递减）
+    if xs <= xe:
+        messagebox.showerror("参数错误", "X 轴起点必须大于终点（起点为视野左侧坐标，较大值）。")
         return
+
+    # Y 轴检查：起点必须小于终点（从下到上为递增）
+    if ys >= ye:
+        messagebox.showerror("参数错误", "Y 轴起点必须小于终点（起点为视野下侧坐标，较小值）。")
+        return
+
     if fov <= 0 or ov < 0 or ov >= 1 or capture_wait < 0 or move_wait < 0:
         messagebox.showerror("参数错误", "视野>0，重叠比例0~1(不含1)，等待时间>=0")
         return
