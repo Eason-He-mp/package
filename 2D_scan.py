@@ -91,7 +91,6 @@ def set_text(pos, text):
     pyautogui.click(pos[0], pos[1])
     time.sleep(0.1)
     pyautogui.hotkey('ctrl', 'a')
-    pyautogui.press('backspace')
     pyautogui.write(str(text))
 
 # ============================================================
