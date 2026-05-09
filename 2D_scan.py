@@ -87,11 +87,10 @@ def activate_target_window():
     time.sleep(0.5)          # 适当延长等待，保证窗口完全获得焦点
 
 def set_text(pos, text):
-    """点击输入框，清空并输入新内容"""
+    """点击输入框（自动全选），然后直接写入新值"""
     pyautogui.click(pos[0], pos[1])
-    time.sleep(0.1)
-    pyautogui.hotkey('ctrl', 'a')
-    pyautogui.write(str(text))
+    time.sleep(0.1)            # 等待软件自动全选就绪
+    pyautogui.write(str(text)) # 直接输入，覆盖选中内容
 
 # ============================================================
 # 4. 扫描主逻辑
