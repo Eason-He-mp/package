@@ -1,13 +1,14 @@
 """
-2D CT 分块重叠扫描工具（最终覆盖完整版）
-========================================
+2D CT 分块重叠扫描工具（行优先·覆盖完整·Y只设一次）
+====================================================
 功能：
   - 读取 config.json 获取窗口标题、控件屏幕绝对坐标
-  - GUI 输入样品范围（物理坐标）、视野、重叠比例、采集/移动等待时间、文件名前缀
-  - 自动计算所有扫描位置，保证完全覆盖样品区域（边缘不留空白）
-  - 行优先扫描：先固定 Y，遍历 X；每个扫描块独立设置 X、Y 坐标并确认移动
+  - GUI 输入样品物理范围、视野、重叠、采集/移动等待时间、文件名前缀
+  - 行优先扫描：外层固定 Y，内层遍历 X；每行开始时设置 Y 并确认移动，
+    内层每个扫描块只设置 X 并确认移动
   - 视野大小仅在开始时设置一次
-  - 流程：Live → 设置 X/Y → 确认移动 → 等待移动 → Capture → 等待采集 → 保存 → Live
+  - 流程：Live → (换行时)设置 Y/确认移动/等待 → (每块)设置 X/确认移动/等待 →
+          Capture → 等待采集 → 保存 → Live
   - Esc 热键紧急停止，停止后鼠标移至 (1200, 600)
   - 扫描时隐藏主窗口，防止焦点错乱
 依赖：pyautogui, pynput, tkinter
@@ -38,7 +39,7 @@ def load_config():
                              f"未找到 {CONFIG_FILE}，请将配置文件与本程序放在同一目录。")
         sys.exit(1)
     try:
-        with open(CONFIG_FILE, "r", encoding="utf-8-sig") as f:   # 兼容 UTF-8 BOM
+        with open(CONFIG_FILE, "r", encoding="utf-8-sig") as f:
             config = json.load(f)
         if "window" not in config or "controls" not in config:
             raise KeyError("缺少 'window' 或 'controls' 字段")
@@ -60,7 +61,7 @@ CT_WINDOW_TITLE = config["window"]["title"]
 controls = config["controls"]
 xInputBox        = tuple(controls["x_input"])
 yInputBox        = tuple(controls["y_input"])
-sizeInputBox     = tuple(controls["size_input"]) if controls.get("size_input") else None   # 可为 null
+sizeInputBox     = tuple(controls["size_input"]) if controls.get("size_input") else None
 liveButton       = tuple(controls["live_button"])
 captureButton    = tuple(controls["capture_button"])
 moveConfirmBtn   = tuple(controls["move_confirm_button"])
@@ -90,18 +91,18 @@ def activate_target_window():
 def set_text(pos, text):
     """点击输入框（软件自动全选），然后直接写入新值"""
     pyautogui.click(pos[0], pos[1])
-    time.sleep(0.1)            # 等待自动全选生效
+    time.sleep(0.1)
     pyautogui.write(str(text))
 
 # ============================================================
-# 4. 扫描主逻辑（行优先，每个块都设 X/Y，保证完全覆盖）
+# 4. 扫描主逻辑（行优先，Y 只设一次，完全覆盖边界）
 # ============================================================
 def run_scan(params):
     global stop_flag
     stop_flag = False
     root.withdraw()                     # 隐藏主窗口
 
-    xs = params['Xstart']               # 样品 X 起点（物理坐标）
+    xs = params['Xstart']               # 样品 X 起点（物理边界）
     xe = params['Xend']                 # 样品 X 终点
     ys = params['Ystart']
     ye = params['Yend']
@@ -114,17 +115,17 @@ def run_scan(params):
     try:
         activate_target_window()
 
-        # 按钮坐标（屏幕绝对坐标）
+        # 按钮坐标
         xi, yi = xInputBox, yInputBox
         si = sizeInputBox
         lb, cb = liveButton, captureButton
         mc = moveConfirmBtn
         so, fi, sc = saveOpenBtn, fileNameInput, saveConfirmBtn
 
-        # ---------- 计算扫描矩阵（保证边界完全覆盖）----------
-        step = fov * (1 - ov)            # 步距
+        # ---------- 计算扫描矩阵（保证完全覆盖）----------
+        step = fov * (1 - ov)
 
-        # X 方向
+        # X 方向中心序列
         if (xe - xs) <= fov:
             Nx = 1
             Xcenters = [(xs + xe) / 2.0]
@@ -132,7 +133,7 @@ def run_scan(params):
             Nx = math.ceil((xe - xs - fov) / step) + 1
             Xcenters = [xs + fov/2.0 + i * step for i in range(Nx)]
 
-        # Y 方向
+        # Y 方向中心序列
         if (ye - ys) <= fov:
             Ny = 1
             Ycenters = [(ys + ye) / 2.0]
@@ -150,7 +151,7 @@ def run_scan(params):
             return
 
         # ---------- 一次性设置 ----------
-        # 设置视野大小（仅一次）
+        # 视野大小（仅一次）
         if si:
             set_text(si, fov)
             time.sleep(0.3)
@@ -159,9 +160,24 @@ def run_scan(params):
         pyautogui.click(lb)
         time.sleep(0.2)
 
-        # ===== 主扫描循环：行优先（Y 外层，X 内层）=====
+        # ===== 主扫描循环：行优先（Y 外层，每行只设一次 Y）=====
         count = 0
         for yc in Ycenters:
+            # ----- 换行：设置本行 Y 坐标并确认移动 -----
+            set_text(yi, yc)                # 填写 Y 坐标
+            pyautogui.click(mc)             # 确认移动（CNC 移动到该行 Y 位置）
+            time.sleep(0.2)
+
+            # 等待 CNC 移动到目标 Y 位置
+            if move_wait > 0:
+                remaining = move_wait
+                while remaining > 0 and not stop_flag:
+                    time.sleep(min(1, remaining))
+                    remaining -= 1
+            if stop_flag:
+                break
+
+            # ----- 遍历本行所有 X 位置 -----
             for xc in Xcenters:
                 if stop_flag:
                     break
@@ -175,14 +191,12 @@ def run_scan(params):
 
                 # 2. 设置 X 坐标
                 set_text(xi, xc)
-                # 3. 设置 Y 坐标
-                set_text(yi, yc)
 
-                # 4. 确认移动（CNC 移动到 xc, yc）
+                # 3. 确认移动（X 轴）
                 pyautogui.click(mc)
                 time.sleep(0.2)
 
-                # 5. 等待移动到位
+                # 4. 等待移动到位
                 if move_wait > 0:
                     remaining = move_wait
                     while remaining > 0 and not stop_flag:
@@ -191,9 +205,9 @@ def run_scan(params):
                 if stop_flag:
                     break
 
-                # 6. Capture 抓图
+                # 5. Capture 抓图
                 pyautogui.click(cb)
-                # 7. 等待采集
+                # 6. 等待采集
                 remaining = capture_wait
                 while remaining > 0 and not stop_flag:
                     time.sleep(min(1, remaining))
@@ -201,19 +215,19 @@ def run_scan(params):
                 if stop_flag:
                     break
 
-                # 8. 保存文件
-                pyautogui.click(so)          # 打开保存对话框
+                # 7. 保存文件
+                pyautogui.click(so)
                 time.sleep(0.8)
-                pyautogui.click(fi)          # 文件名输入框
+                pyautogui.click(fi)
                 time.sleep(0.2)
                 pyautogui.hotkey('ctrl', 'a')
                 pyautogui.press('backspace')
                 fname = f"{prefix}{count:03d}"
                 pyautogui.write(fname)
-                pyautogui.click(sc)          # 保存按钮
+                pyautogui.click(sc)
                 time.sleep(1)
 
-                # 9. 再次 Live，准备下一块
+                # 8. 再次 Live，准备下一块
                 pyautogui.click(lb)
                 time.sleep(0.2)
 
@@ -228,10 +242,10 @@ def run_scan(params):
     except Exception as e:
         root.after(0, lambda err=str(e): messagebox.showerror("错误", err))
     finally:
-        root.after(0, root.deiconify)   # 恢复主窗口
+        root.after(0, root.deiconify)
 
 # ============================================================
-# 5. GUI 更新
+# 5. GUI 更新函数
 # ============================================================
 def update_status(msg):
     status_var.set(msg)
@@ -247,7 +261,7 @@ root = tk.Tk()
 root.title("CT 分块扫描控制台")
 status_var = tk.StringVar(value="就绪")
 
-# 界面变量
+# 界面变量（默认值可根据实际调整）
 var_Xstart = tk.DoubleVar(value=0.0)
 var_Xend   = tk.DoubleVar(value=100.0)
 var_Ystart = tk.DoubleVar(value=0.0)
@@ -301,7 +315,6 @@ tk.Button(btn_frame, text="退出", width=8, command=root.quit).pack(side="left"
 
 tk.Label(root, textvariable=status_var, bd=1, relief="sunken", anchor="w").pack(fill="x", padx=10, pady=5)
 
-# 回调函数
 def set_stop():
     global stop_flag
     stop_flag = True
