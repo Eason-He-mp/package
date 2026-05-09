@@ -1,13 +1,15 @@
 """
-2D CT 分块重叠扫描工具（X 递减 · Y 递增 · 统一逻辑版）
-========================================================
+2D CT 分块重叠扫描工具（X 递减·Y 递增·中心越过终点）
+====================================================
 功能：
   - 读取 config.json 获取窗口标题、控件屏幕绝对坐标
   - GUI 中输入扫描范围：
-      X 起点（较大值）→ X 终点（较小值），为从左到右的视野范围，扫描时从大到小
-      Y 起点（较小值）→ Y 终点（较大值），从下到上扫描
-  - 步长计算：绝对步长 = 视野 × (1 - 重叠)，X 方向取负值，Y 方向取正值
-  - 循环生成中心序列，直至中心坐标越过终点（X：不大于终点；Y：不小于终点）
+      X 起点（大值）→ X 终点（小值），从左到右递减扫描
+      Y 起点（小值）→ Y 终点（大值），从下到上递增扫描
+  - 步长计算：绝对步长 = 视野 × (1 - 重叠)，X 取负值，Y 取正值
+  - 循环生成中心序列，保证最后一个中心：
+      X 轴：中心坐标 < X 终点（覆盖左边界）
+      Y 轴：中心坐标 > Y 终点（覆盖上边界）
   - 行优先扫描：外层 Y 递增，内层 X 递减；每行开始时设置 Y 并确认移动，内层只设 X
   - 视野大小仅在开始时设置一次
   - Esc 紧急停止，停止后鼠标移至 (1200, 600)
@@ -91,17 +93,17 @@ def set_text(pos, text):
     pyautogui.write(str(text))
 
 # ============================================================
-# 4. 扫描主逻辑（X 递减，Y 递增，统一循环条件）
+# 4. 扫描主逻辑（中心越过终点）
 # ============================================================
 def run_scan(params):
     global stop_flag
     stop_flag = False
     root.withdraw()
 
-    xs = params['Xstart']               # X 起点（较大值，视野左侧）
-    xe = params['Xend']                 # X 终点（较小值，视野右侧）
-    ys = params['Ystart']               # Y 起点（较小值，视野下侧）
-    ye = params['Yend']                 # Y 终点（较大值，视野上侧）
+    xs = params['Xstart']               # X 起点（较大值）
+    xe = params['Xend']                 # X 终点（较小值）
+    ys = params['Ystart']               # Y 起点（较小值）
+    ye = params['Yend']                 # Y 终点（较大值）
     fov = params['FOV']
     ov = params['Overlap']
     capture_wait = params['CaptureWait']
@@ -121,20 +123,26 @@ def run_scan(params):
         step_abs = fov * (1 - ov)       # 绝对步长
 
         # ---- X 方向：递减（步长取负值）----
-        step_x = -step_abs              # 负数，使坐标逐渐减小
+        step_x = -step_abs              # 负值，使坐标逐渐减小
         Xcenters = []
         xc = xs
-        while xc > xe:                  # 只要中心还在终点右侧，继续扫描
+        # 只要中心还未低于终点就继续添加
+        while xc >= xe:
             Xcenters.append(xc)
-            xc += step_x                # 实际上 xc 减小
+            xc += step_x                # xc 减小
+        # 追加越过终点的那个中心（此时 xc < xe）
+        Xcenters.append(xc)
 
         # ---- Y 方向：递增（步长取正值）----
-        step_y = step_abs               # 正数，使坐标逐渐增大
+        step_y = step_abs               # 正值，使坐标逐渐增大
         Ycenters = []
         yc = ys
-        while yc < ye:                  # 只要中心还在终点下侧，继续扫描
+        # 只要中心还未超过终点就继续添加
+        while yc <= ye:
             Ycenters.append(yc)
-            yc += step_y
+            yc += step_y                # yc 增大
+        # 追加越过终点的那个中心（此时 yc > ye）
+        Ycenters.append(yc)
 
         Nx = len(Xcenters)
         Ny = len(Ycenters)
@@ -142,8 +150,8 @@ def run_scan(params):
 
         if not messagebox.askyesno("确认扫描",
                                    f"将扫描 {Nx} 列 × {Ny} 行 = {total} 个位置。\n"
-                                   f"X 步距 = {step_abs:.2f} mm（递减）\n"
-                                   f"Y 步距 = {step_abs:.2f} mm（递增）\n"
+                                   f"X 步距 = {step_abs:.2f} mm（递减，末中心 < 终点）\n"
+                                   f"Y 步距 = {step_abs:.2f} mm（递增，末中心 > 终点）\n"
                                    f"采集等待 = {capture_wait} s  |  移动等待 = {move_wait} s\n\n是否开始？"):
             root.deiconify()
             return
@@ -324,12 +332,12 @@ def start_scan_thread():
     if not prefix:
         prefix = "Scan"
 
-    # X 轴检查：起点必须大于终点（从左到右为递减）
+    # X 轴检查：起点必须大于终点（从左到右递减）
     if xs <= xe:
         messagebox.showerror("参数错误", "X 轴起点必须大于终点（起点为视野左侧坐标，较大值）。")
         return
 
-    # Y 轴检查：起点必须小于终点（从下到上为递增）
+    # Y 轴检查：起点必须小于终点（从下到上递增）
     if ys >= ye:
         messagebox.showerror("参数错误", "Y 轴起点必须小于终点（起点为视野下侧坐标，较小值）。")
         return
