@@ -133,69 +133,81 @@ def run_scan(params):
                                    f"采集等待 = {capture_wait} s  |  移动等待 = {move_wait} s\n\n是否开始？"):
             root.deiconify()  # 如果取消，恢复主窗口
             return
+        # ===== 双重循环：行优先 =====
+count = 0
+for j in range(Ny):
+    yc = ys + j * step                    # 当前行的 Y 坐标
 
-        count = 0
-        for i in range(Nx):
-            xc = xs + i * step
-            for j in range(Ny):
-                if stop_flag:
-                    break
-                yc = ys + j * step
-                count += 1
-                root.after(0, update_status, f"第 {count}/{total} 块  X={xc:.1f}, Y={yc:.1f}")
+    # 设置本行 Y 坐标 + 确认移动（让 CNC 移到该行起始 Y）
+    set_text(yi, yc)
+    pyautogui.click(mc)                   # 确认移动
+    time.sleep(0.2)
 
-                # ---------- 扫描流程 ----------
-                # 1. 切换到 Live 模式
-                pyautogui.click(lb)
-                time.sleep(0.2)
+    # 等待 CNC 移动到位
+    if move_wait > 0:
+        remaining = move_wait
+        while remaining > 0 and not stop_flag:
+            time.sleep(min(1, remaining))
+            remaining -= 1
+    if stop_flag:
+        break
 
-                # 2. 设置坐标
-                set_text(xi, xc)
-                set_text(yi, yc)
-                if si:
-                    set_text(si, fov)
+    for i in range(Nx):
+        if stop_flag:
+            break
+        xc = xs + i * step
+        count += 1
 
-                # 3. 点击“确认移动”按钮，让 CNC 执行移动指令
-                pyautogui.click(mc[0], mc[1])
-                time.sleep(0.2)
+        root.after(0, update_status, f"第 {count}/{total} 块  X={xc:.1f}, Y={yc:.1f}")
 
-                # 4. 等待 CNC 移动到位（可自定义时间）
-                if move_wait > 0:
-                    remaining = move_wait
-                    while remaining > 0 and not stop_flag:
-                        time.sleep(min(1, remaining))
-                        remaining -= 1
-                if stop_flag:
-                    break
+        # 1. 点击 Live（确保实时预览）
+        pyautogui.click(lb)
+        time.sleep(0.2)
 
-                # 5. 点击 Capture 抓图
-                pyautogui.click(cb)
-                # 6. 等待采集完成
-                remaining = capture_wait
-                while remaining > 0 and not stop_flag:
-                    time.sleep(min(1, remaining))
-                    remaining -= 1
-                if stop_flag:
-                    break
+        # 2. 设置 X 坐标（Y 已固定）
+        set_text(xi, xc)
 
-                # 7. 保存图像
-                pyautogui.click(so)
-                time.sleep(0.8)
-                pyautogui.click(fi)
-                time.sleep(0.2)
-                pyautogui.hotkey('ctrl', 'a')
-                pyautogui.press('backspace')
-                fname = f"{prefix}{count:03d}"
-                pyautogui.write(fname)
-                pyautogui.click(sc)
-                time.sleep(1)
+        # 3. 确认移动（X 轴）
+        pyautogui.click(mc)
+        time.sleep(0.2)
 
-                # 8. 再次点击 Live，准备下一次移动
-                pyautogui.click(lb)
-                time.sleep(0.2)
+        # 4. 等待 CNC X 轴移动
+        if move_wait > 0:
+            remaining = move_wait
+            while remaining > 0 and not stop_flag:
+                time.sleep(min(1, remaining))
+                remaining -= 1
+        if stop_flag:
+            break
 
-            if stop_flag:
-                break
+        # 5. Capture
+        pyautogui.click(cb)
+        # 6. 等待采集
+        remaining = capture_wait
+        while remaining > 0 and not stop_flag:
+            time.sleep(min(1, remaining))
+            remaining -= 1
+        if stop_flag:
+            break
+
+        # 7. 保存文件
+        pyautogui.click(so)
+        time.sleep(0.8)
+        pyautogui.click(fi)
+        time.sleep(0.2)
+        pyautogui.hotkey('ctrl', 'a')
+        pyautogui.press('backspace')
+        fname = f"{prefix}{count:03d}"
+        pyautogui.write(fname)
+        pyautogui.click(sc)
+        time.sleep(1)
+
+        # 8. 再次点击 Live，准备下一个位置
+        pyautogui.click(lb)
+        time.sleep(0.2)
+
+    if stop_flag:
+        break
 
         if stop_flag:
             root.after(0, lambda: status_var.set("已停止"))
