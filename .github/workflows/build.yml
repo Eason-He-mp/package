@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2019     # 较老的 Windows Server 环境，兼容性更好
+    runs-on: windows-2022     # 较老的 Windows Server 环境，兼容性更好
 
     steps:
       - name: 检出代码
