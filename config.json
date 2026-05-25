@@ -1,15 +1,21 @@
 {
   "window": {
-    "title": "CT软件窗口标题"
+    "title": "GE"
   },
   "controls": {
-    "x_input": [150, 120],
-    "y_input": [150, 160],
+    "x_input": [450, 300],
+    "y_input": [450, 340],
     "size_input": null,
-    "live_button": [400, 300],
-    "capture_button": [400, 350],
-    "save_open_button": [320, 500],
-    "file_name_input": [200, 300],
-    "save_confirm_button": [350, 400]
+    "move_confirm_button": [450, 400],
+    "save_open_button": [320, 600],
+    "file_name_input": [200, 200],
+    "save_confirm_button": [350, 300],
+
+    "exposure_menu_button": [100, 200],
+    "integration_menu_button": [200, 200],
+    "integration_dropdown_left": 180,
+    "integration_dropdown_right": 260,
+    "integration_dropdown_top": 220,
+    "integration_dropdown_bottom": 480
   }
 }
