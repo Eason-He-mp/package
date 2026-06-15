@@ -295,7 +295,18 @@ def run_scan(params):
         root.after(0, lambda err=str(e): messagebox.showerror("错误", err))
     finally:
         root.after(0, root.deiconify)
-
+      
+def ask_stitch_after_scan():
+    """扫描完成后弹窗询问是否立即拼接"""
+    if not last_scan_params:
+        return
+    ans = messagebox.askyesno("拼接", "扫描已完成。\n是否立即进行图像拼接？")
+    if ans:
+        stitch_images()
+    else:
+        # 激活手动拼接按钮
+        btn_stitch.config(state="normal")
+        status_var.set("就绪（可点击“拼接图像”按钮进行拼接）")
 # ============================================================
 # 6. 拼接相关函数
 # ============================================================
