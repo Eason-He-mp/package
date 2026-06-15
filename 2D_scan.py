@@ -311,53 +311,124 @@ def ask_stitch_after_scan():
 # 6. 拼接相关函数
 # ============================================================
 def stitch_images():
-    """图形化选择拼接矩阵大小（已修复路径问题）"""
+    """图形化选择拼接范围，自动丢弃边缘冗余块"""
+    # ---------- 条件检查 ----------
     if not last_scan_params:
-        messagebox.showwarning("无扫描参数", "请先执行一次扫描。")
+        messagebox.showwarning("无扫描参数", "请先执行一次完整扫描。")
         return
 
     fiji_exe = FIJI_EXECUTABLE
     if not fiji_exe or not os.path.isfile(fiji_exe):
         messagebox.showerror("Fiji 未找到",
-                             "请在 config.json 中配置正确的 fiji_executable 路径。")
+                             "请在 config.json 中配置正确的 fiji_executable 路径，\n"
+                             "并确保 Fiji 已安装。")
         return
 
     params = last_scan_params
     image_dir = params['image_dir']
     if not os.path.isdir(image_dir):
-        messagebox.showerror("图像目录不存在", f"目录 {image_dir} 不存在。")
+        messagebox.showerror("图像目录不存在",
+                             f"目录 {image_dir} 不存在，\n请检查主界面中的“图像目录”设置。")
         return
-
-    # ========== 关键修复：路径转为正斜杠 ==========
-    safe_dir = image_dir.replace('\\', '/')
-    # 如果路径包含空格，用双引号包裹（ImageJ 宏要求）
-    if ' ' in safe_dir:
-        safe_dir_quoted = f'"{safe_dir}"'
-    else:
-        safe_dir_quoted = safe_dir
-    # =============================================
 
     orig_Nx = params['Nx']
     orig_Ny = params['Ny']
 
-    # ...（图形化选择矩阵的 GUI 代码不变，省略以节约篇幅）...
-    # 假设最终得到 Nx_stitch, Ny_stitch
+    # ---------- 矩阵选择 GUI ----------
+    dlg = tk.Toplevel(root)
+    dlg.title("选择拼接范围（保留左上角区域）")
+    dlg.resizable(False, False)
+    dlg.grab_set()
 
-    # 生成拼接宏
+    ctrl_frame = tk.Frame(dlg)
+    ctrl_frame.pack(pady=10)
+
+    tk.Label(ctrl_frame, text="保留列数:").grid(row=0, column=0, padx=5)
+    col_var = tk.IntVar(value=orig_Nx)
+    col_spin = tk.Spinbox(ctrl_frame, from_=1, to=orig_Nx, textvariable=col_var, width=5)
+    col_spin.grid(row=0, column=1, padx=5)
+
+    tk.Label(ctrl_frame, text="保留行数:").grid(row=0, column=2, padx=5)
+    row_var = tk.IntVar(value=orig_Ny)
+    row_spin = tk.Spinbox(ctrl_frame, from_=1, to=orig_Ny, textvariable=row_var, width=5)
+    row_spin.grid(row=0, column=3, padx=5)
+
+    preview_frame = tk.Frame(dlg, bg="white", relief="ridge", bd=2)
+    preview_frame.pack(padx=10, pady=5)
+
+    cell_size = 25
+    canvas = tk.Canvas(preview_frame,
+                       width=orig_Nx * cell_size + 2,
+                       height=orig_Ny * cell_size + 2,
+                       highlightthickness=0, bg="white")
+    canvas.pack()
+
+    def draw_grid():
+        canvas.delete("all")
+        keep_cols = col_var.get()
+        keep_rows = row_var.get()
+        for j in range(orig_Ny):
+            for i in range(orig_Nx):
+                x1 = i * cell_size + 1
+                y1 = j * cell_size + 1
+                x2 = x1 + cell_size - 2
+                y2 = y1 + cell_size - 2
+                if i < keep_cols and j < keep_rows:
+                    color, outline = "#4CAF50", "#2E7D32"
+                else:
+                    color, outline = "#CCCCCC", "#999999"
+                canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline=outline)
+                idx = j * orig_Nx + i + 1
+                canvas.create_text(x1 + cell_size//2 - 1, y1 + cell_size//2 - 1,
+                                   text=str(idx), font=("Arial", 7), fill="black")
+
+    col_var.trace_add('write', lambda *a: draw_grid())
+    row_var.trace_add('write', lambda *a: draw_grid())
+    draw_grid()
+
+    btn_frame = tk.Frame(dlg)
+    btn_frame.pack(pady=10)
+    result = {"confirmed": False, "nx": orig_Nx, "ny": orig_Ny}
+
+    def confirm():
+        result["nx"] = col_var.get()
+        result["ny"] = row_var.get()
+        result["confirmed"] = True
+        dlg.destroy()
+
+    def cancel():
+        dlg.destroy()
+
+    tk.Button(btn_frame, text="确定", command=confirm).pack(side="left", padx=10)
+    tk.Button(btn_frame, text="取消", command=cancel).pack(side="left", padx=10)
+
+    root.wait_window(dlg)
+    if not result["confirmed"]:
+        status_var.set("拼接已取消")
+        return
+
+    Nx_stitch, Ny_stitch = result["nx"], result["ny"]
+
+    # ---------- 生成 ImageJ 宏 ----------
     prefix = params['prefix']
     overlap = params['overlap']
-    # 文件名模板：使用正斜杠目录
+    # 路径转换：确保 ImageJ 可以识别
+    safe_dir = image_dir.replace('\\', '/')
+    if ' ' in safe_dir:
+        dir_for_macro = f'"{safe_dir}"'
+    else:
+        dir_for_macro = safe_dir
+
     file_template = f"{prefix}{{iii}}.tif"
 
+    # 计算缺失的 tile（被丢弃的）
     missing = []
     for j in range(orig_Ny):
         for i in range(orig_Nx):
             if i >= Nx_stitch or j >= Ny_stitch:
-                idx = j * orig_Nx + i + 1
-                missing.append(idx)
+                missing.append(j * orig_Nx + i + 1)
     missing_str = ",".join(str(t) for t in missing) if missing else ""
 
-    # 输出目录也使用 safe_dir（与图像目录相同）
     macro_content = f"""
 // Auto-generated stitching macro
 run("Grid/Collection stitching", 
@@ -367,7 +438,7 @@ run("Grid/Collection stitching",
      grid_size_y={orig_Ny} 
      tile_overlap={int(overlap*100)} 
      first_file_index_i=1 
-     directory=[{safe_dir_quoted}] 
+     directory=[{dir_for_macro}] 
      file_names={file_template} 
      output_textfile_name=TileConfiguration.txt 
      fusion_method=[Linear Blending]
@@ -376,15 +447,14 @@ run("Grid/Collection stitching",
      absolute_displacement_threshold=3.50 
      computation_parameters=[Save memory (but be slower)] 
      image_output=[Write to disk] 
-     output_directory=[{safe_dir_quoted}]
+     output_directory=[{dir_for_macro}]
      {"missing_tiles=[" + missing_str + "]" if missing_str else ""});
 waitFor("Stitching");
-// 使用 saveAs 命令保存，路径同样转为正斜杠
 saveAs("Tiff", "{safe_dir}/Stitched_Result.tif");
 run("Quit");
 """
 
-    # 写入临时宏并执行（异常处理同前）
+    # ---------- 执行 Fiji ----------
     macro_file = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".ijm", delete=False, encoding="utf-8") as f:
@@ -403,10 +473,7 @@ run("Quit");
         messagebox.showerror("拼接超时", "拼接进程超过10分钟未完成。")
         return
     except subprocess.CalledProcessError as e:
-        # 打印宏内容帮助调试
-        with open(macro_file, 'r') as f:
-            print(f.read())  # 可在控制台查看
-        messagebox.showerror("拼接失败", f"Fiji 返回错误码 {e.returncode}。\n请检查图像目录是否包含空格，或查看控制台输出的宏内容。")
+        messagebox.showerror("拼接失败", f"Fiji 返回错误码 {e.returncode}。\n请检查图像文件格式或目录权限。")
         return
     except Exception as e:
         messagebox.showerror("运行 Fiji 出错", str(e))
@@ -415,15 +482,14 @@ run("Quit");
         if macro_file and os.path.exists(macro_file):
             os.remove(macro_file)
 
-    # 检查结果文件（使用原始 image_dir 拼接完整路径）
+    # ---------- 保存结果 ----------
     result_temp = os.path.join(image_dir, "Stitched_Result.tif")
     if not os.path.isfile(result_temp):
         messagebox.showerror("拼接结果丢失",
-                             f"拼接似乎未生成结果文件。\n预期路径：{result_temp}\n"
-                             "请检查图像目录权限或手动运行Fiji宏。")
+                             f"未生成拼接文件。\n预期位置：{result_temp}\n"
+                             "请检查 Fiji 插件是否正常，或图像文件名是否匹配。")
         return
 
-    # 保存对话框
     save_path = filedialog.asksaveasfilename(
         title="保存拼接图像",
         defaultextension=".tif",
@@ -440,7 +506,6 @@ run("Quit");
         messagebox.showwarning("未保存", f"拼接结果保留在：\n{result_temp}")
 
     status_var.set("就绪")
-
 # ============================================================
 # 7. GUI 更新
 # ============================================================
