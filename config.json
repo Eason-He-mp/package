@@ -2,6 +2,7 @@
   "window": {
     "title": "GE"
   },
+  "fiji_executable": "C:\\Fiji.app\\ImageJ-win64.exe",
   "controls": {
     "x_input": [450, 300],
     "y_input": [450, 340],
@@ -10,7 +11,6 @@
     "save_open_button": [320, 600],
     "file_name_input": [200, 200],
     "save_confirm_button": [350, 300],
-
     "exposure_menu_button": [100, 200],
     "integration_menu_button": [200, 200],
     "integration_dropdown_left": 180,
