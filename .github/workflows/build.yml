@@ -30,12 +30,15 @@ jobs:
       - name: 打包坐标抓取器
         run: pyinstaller --onefile --windowed --name GetCoords get_coords.py
 
-      - name: 上传所有 EXE
+      - name: 上传 CT_Scan_Tool
         uses: actions/upload-artifact@v6
         with:
-          name: CT_Tools_Package
-          path: |
-            dist/CT_Scan_Tool.exe
-            dist/GetCoords.exe
-          
+          name: CT_Scan_Tool
+          path: dist/CT_Scan_Tool.exe
+
+      - name: 上传 GetCoords
+        uses: actions/upload-artifact@v6
+        with:
+          name: GetCoords
+          path: dist/GetCoords.exe
       
