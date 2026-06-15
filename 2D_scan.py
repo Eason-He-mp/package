@@ -311,8 +311,7 @@ def ask_stitch_after_scan():
 # 6. 拼接相关函数
 # ============================================================
 def stitch_images():
-    """图形化选择拼接范围，自动丢弃边缘冗余块"""
-    # ---------- 条件检查 ----------
+    """图形化选择拼接范围，自动丢弃边缘冗余块（修复保存窗口问题）"""
     if not last_scan_params:
         messagebox.showwarning("无扫描参数", "请先执行一次完整扫描。")
         return
@@ -409,10 +408,9 @@ def stitch_images():
 
     Nx_stitch, Ny_stitch = result["nx"], result["ny"]
 
-    # ---------- 生成 ImageJ 宏 ----------
+    # ---------- 路径处理 ----------
     prefix = params['prefix']
     overlap = params['overlap']
-    # 路径转换：确保 ImageJ 可以识别
     safe_dir = image_dir.replace('\\', '/')
     if ' ' in safe_dir:
         dir_for_macro = f'"{safe_dir}"'
@@ -421,7 +419,7 @@ def stitch_images():
 
     file_template = f"{prefix}{{iii}}.tif"
 
-    # 计算缺失的 tile（被丢弃的）
+    # 计算缺失tile
     missing = []
     for j in range(orig_Ny):
         for i in range(orig_Nx):
@@ -429,6 +427,7 @@ def stitch_images():
                 missing.append(j * orig_Nx + i + 1)
     missing_str = ",".join(str(t) for t in missing) if missing else ""
 
+    # ---------- 生成宏（修复保存）----------
     macro_content = f"""
 // Auto-generated stitching macro
 run("Grid/Collection stitching", 
@@ -450,6 +449,7 @@ run("Grid/Collection stitching",
      output_directory=[{dir_for_macro}]
      {"missing_tiles=[" + missing_str + "]" if missing_str else ""});
 waitFor("Stitching");
+selectWindow("Fused");
 saveAs("Tiff", "{safe_dir}/Stitched_Result.tif");
 run("Quit");
 """
@@ -482,12 +482,12 @@ run("Quit");
         if macro_file and os.path.exists(macro_file):
             os.remove(macro_file)
 
-    # ---------- 保存结果 ----------
+    # ---------- 检查结果 ----------
     result_temp = os.path.join(image_dir, "Stitched_Result.tif")
     if not os.path.isfile(result_temp):
         messagebox.showerror("拼接结果丢失",
                              f"未生成拼接文件。\n预期位置：{result_temp}\n"
-                             "请检查 Fiji 插件是否正常，或图像文件名是否匹配。")
+                             "请确认图像文件名是否匹配，或手动运行Fiji宏检查窗口标题。")
         return
 
     save_path = filedialog.asksaveasfilename(
