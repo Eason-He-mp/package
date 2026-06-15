@@ -311,7 +311,7 @@ def ask_stitch_after_scan():
 # 6. 拼接相关函数
 # ============================================================
 def stitch_images():
-    """图形化选择拼接范围，自动丢弃边缘冗余块（修复保存窗口问题）"""
+    """图形化选择拼接范围，使用 fused.tif 重命名方案（避免窗口标题问题）"""
     if not last_scan_params:
         messagebox.showwarning("无扫描参数", "请先执行一次完整扫描。")
         return
@@ -427,7 +427,7 @@ def stitch_images():
                 missing.append(j * orig_Nx + i + 1)
     missing_str = ",".join(str(t) for t in missing) if missing else ""
 
-    # ---------- 生成宏（修复保存）----------
+    # ---------- 生成宏（不再进行 selectWindow/saveAs）----------
     macro_content = f"""
 // Auto-generated stitching macro
 run("Grid/Collection stitching", 
@@ -448,9 +448,6 @@ run("Grid/Collection stitching",
      image_output=[Write to disk] 
      output_directory=[{dir_for_macro}]
      {"missing_tiles=[" + missing_str + "]" if missing_str else ""});
-waitFor("Stitching");
-selectWindow("Fused");
-saveAs("Tiff", "{safe_dir}/Stitched_Result.tif");
 run("Quit");
 """
 
@@ -473,7 +470,7 @@ run("Quit");
         messagebox.showerror("拼接超时", "拼接进程超过10分钟未完成。")
         return
     except subprocess.CalledProcessError as e:
-        messagebox.showerror("拼接失败", f"Fiji 返回错误码 {e.returncode}。\n请检查图像文件格式或目录权限。")
+        messagebox.showerror("拼接失败", f"Fiji 返回错误码 {e.returncode}。")
         return
     except Exception as e:
         messagebox.showerror("运行 Fiji 出错", str(e))
@@ -482,14 +479,20 @@ run("Quit");
         if macro_file and os.path.exists(macro_file):
             os.remove(macro_file)
 
-    # ---------- 检查结果 ----------
+    # ---------- 重命名 fused.tif ----------
+    fused_file = os.path.join(image_dir, "fused.tif")
     result_temp = os.path.join(image_dir, "Stitched_Result.tif")
-    if not os.path.isfile(result_temp):
+    if os.path.isfile(fused_file):
+        if os.path.exists(result_temp):
+            os.remove(result_temp)
+        os.rename(fused_file, result_temp)
+    elif not os.path.isfile(result_temp):
         messagebox.showerror("拼接结果丢失",
-                             f"未生成拼接文件。\n预期位置：{result_temp}\n"
-                             "请确认图像文件名是否匹配，或手动运行Fiji宏检查窗口标题。")
+                             f"未生成拼接文件。\n"
+                             f"请检查 Fiji 插件是否正常运行，或图像文件名是否匹配。")
         return
 
+    # ---------- 保存对话框 ----------
     save_path = filedialog.asksaveasfilename(
         title="保存拼接图像",
         defaultextension=".tif",
@@ -505,15 +508,6 @@ run("Quit");
     else:
         messagebox.showwarning("未保存", f"拼接结果保留在：\n{result_temp}")
 
-    status_var.set("就绪")
-# ============================================================
-# 7. GUI 更新
-# ============================================================
-def update_status(msg):
-    status_var.set(msg)
-
-def scan_complete(total):
-    messagebox.showinfo("完成", f"全部扫描完成！共 {total} 块数据已保存。")
     status_var.set("就绪")
 
 # ============================================================
