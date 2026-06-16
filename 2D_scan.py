@@ -295,13 +295,9 @@ def run_scan(params):
                 # 6. 保存文件
                 pyautogui.click(so)      # 打开保存对话框
                 time.sleep(0.8)
-                pyautogui.click(fi)      # 文件名输入框
-                time.sleep(0.2)
-                pyautogui.hotkey('ctrl', 'a')
-                pyautogui.press('backspace')
                 fname = f"{prefix}{count:03d}"
                 pyautogui.write(fname)
-                pyautogui.click(sc)      # 保存按钮
+                pyautogui.press('enter')      # 保存按钮
                 time.sleep(1)
 
                 # 7. 再次 Live，准备下一块
