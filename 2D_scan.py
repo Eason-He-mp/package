@@ -317,16 +317,18 @@ def run_scan(params):
             return
 
         
-        # 扫描正常完成，先保存参数（供拼接使用）
-      last_scan_params = {
+     # 扫描正常完成，先保存参数（供拼接使用）
+last_scan_params = {
     'image_dir': image_dir,
     'prefix': prefix,
     'Nx': Nx,
     'Ny': Ny,
     'overlap': ov,
     'total': total
-      }
+}
 
+# 然后调度 scan_complete（其中会调用 ask_stitch_after_scan）
+root.after(0, scan_complete, total)
      # 然后调度 scan_complete（其中会调用 ask_stitch_after_scan）
     root.after(0, scan_complete, total)
     except Exception as e:
