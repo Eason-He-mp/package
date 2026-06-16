@@ -311,29 +311,25 @@ def run_scan(params):
             if stop_flag:
                 break
 
-        if stop_flag:
+                if stop_flag:
             root.after(0, lambda: status_var.set("已停止"))
         else:
+            # 扫描正常完成，先保存参数（供拼接使用）
+            last_scan_params = {
+                'image_dir': image_dir,
+                'prefix': prefix,
+                'Nx': Nx,
+                'Ny': Ny,
+                'overlap': ov,
+                'total': total
+            }
+            # 然后调度 scan_complete（其中会调用 ask_stitch_after_scan）
+            root.after(0, scan_complete, total)
 
-        
-     # 扫描正常完成，先保存参数（供拼接使用）
-last_scan_params = {
-    'image_dir': image_dir,
-    'prefix': prefix,
-    'Nx': Nx,
-    'Ny': Ny,
-    'overlap': ov,
-    'total': total
-}
-
-
-     # 然后调度 scan_complete（其中会调用 ask_stitch_after_scan）
-    root.after(0, scan_complete, total)
     except Exception as e:
         root.after(0, lambda err=str(e): messagebox.showerror("错误", err))
     finally:
         root.after(0, root.deiconify)   # 确保主窗口恢复显示
-
 # ============================================================
 # 6. 拼接相关函数
 # ============================================================
