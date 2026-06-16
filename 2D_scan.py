@@ -308,10 +308,11 @@ def run_scan(params):
                 pyautogui.press('f2')
                 time.sleep(0.2)
 
-            if stop_flag:
+           if stop_flag:
                 break
 
-                if stop_flag:
+        # 循环结束后，判断是中途停止还是正常完成
+        if stop_flag:
             root.after(0, lambda: status_var.set("已停止"))
         else:
             # 扫描正常完成，先保存参数（供拼接使用）
@@ -325,7 +326,6 @@ def run_scan(params):
             }
             # 然后调度 scan_complete（其中会调用 ask_stitch_after_scan）
             root.after(0, scan_complete, total)
-
     except Exception as e:
         root.after(0, lambda err=str(e): messagebox.showerror("错误", err))
     finally:
