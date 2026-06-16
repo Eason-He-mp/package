@@ -308,10 +308,11 @@ def run_scan(params):
                 pyautogui.press('f2')
                 time.sleep(0.2)
 
-           if stop_flag:
+            # 退出内层循环后，检查是否需要退出外层循环
+            if stop_flag:
                 break
 
-        # 循环结束后，判断是中途停止还是正常完成
+        # 外层循环结束后，判断是中途停止还是正常完成
         if stop_flag:
             root.after(0, lambda: status_var.set("已停止"))
         else:
@@ -326,10 +327,17 @@ def run_scan(params):
             }
             # 然后调度 scan_complete（其中会调用 ask_stitch_after_scan）
             root.after(0, scan_complete, total)
+
     except Exception as e:
         root.after(0, lambda err=str(e): messagebox.showerror("错误", err))
     finally:
         root.after(0, root.deiconify)   # 确保主窗口恢复显示
+
+# ============================================================
+# 6. 拼接相关函数
+# ============================================================
+# (保留你原本这部分以下的代码...)
+
 # ============================================================
 # 6. 拼接相关函数
 # ============================================================
