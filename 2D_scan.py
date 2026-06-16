@@ -450,12 +450,12 @@ def stitch_images():
     prefix = params['prefix']
     overlap = params['overlap']
     safe_dir = image_dir.replace('\\', '/')
-    if ' ' in safe_dir:
-        dir_for_macro = f'"{safe_dir}"'
-    else:
-        dir_for_macro = safe_dir
+    
+    # 【修复1】ImageJ 宏中，带有空格的路径直接放在 [] 内即可，绝对不能加双引号
+    dir_for_macro = safe_dir
 
-    file_template = f"{prefix}{{iii}}.jpg"
+    # 【修复2】CT 图像通常为 .tif，如果你确定是其他格式（如 .bmp），请在这里修改
+    file_template = f"{prefix}{{iii}}.tif"
 
     # 计算需要丢弃的 tile 索引 (1-based)
     missing = []
@@ -465,29 +465,30 @@ def stitch_images():
                 missing.append(j * orig_Nx + i + 1)
     missing_str = ",".join(str(t) for t in missing) if missing else ""
 
-    # ---------- 生成 ImageJ 宏（不再进行窗口操作）----------
-    macro_content = f"""
-// Auto-generated stitching macro
-run("Grid/Collection stitching", 
-    "type=[Grid: row-by-row] 
-     order=[Right & Down] 
-     grid_size_x={orig_Nx} 
-     grid_size_y={orig_Ny} 
-     tile_overlap={int(overlap*100)} 
-     first_file_index_i=1 
-     directory=[{dir_for_macro}] 
-     file_names={file_template} 
-     output_textfile_name=TileConfiguration.txt 
-     fusion_method=[Linear Blending]
-     regression_threshold=0.30 
-     max/avg_displacement_threshold=2.50 
-     absolute_displacement_threshold=3.50 
-     computation_parameters=[Save memory (but be slower)] 
-     image_output=[Write to disk] 
-     output_directory=[{dir_for_macro}]
-     {"missing_tiles=[" + missing_str + "]" if missing_str else ""});
-run("Quit");
-"""
+    # ---------- 生成 ImageJ 宏 ----------
+    # 【修复3】将参数拼接成单行字符串，避免 ImageJ 宏解析器因换行符报错
+    macro_args = (
+        f"type=[Grid: row-by-row] "
+        f"order=[Right & Down] "
+        f"grid_size_x={orig_Nx} "
+        f"grid_size_y={orig_Ny} "
+        f"tile_overlap={int(overlap*100)} "
+        f"first_file_index_i=1 "
+        f"directory=[{dir_for_macro}] "
+        f"file_names={file_template} "
+        f"output_textfile_name=TileConfiguration.txt "
+        f"fusion_method=[Linear Blending] "
+        f"regression_threshold=0.30 "
+        f"max/avg_displacement_threshold=2.50 "
+        f"absolute_displacement_threshold=3.50 "
+        f"computation_parameters=[Save memory (but be slower)] "
+        f"image_output=[Write to disk] "
+        f"output_directory=[{dir_for_macro}]"
+    )
+    if missing_str:
+        macro_args += f" missing_tiles=[{missing_str}]"
+
+    macro_content = f'run("Grid/Collection stitching", "{macro_args}");\nrun("Quit");\n'
 
     # ---------- 执行 Fiji 命令行 ----------
     macro_file = None
@@ -502,13 +503,14 @@ run("Quit");
     status_var.set("正在拼接图像，请稍候...")
     root.update_idletasks()
     try:
+        # 【注意】如果拼接插件在 headless 模式下崩溃，可尝试将 "--headless" 从列表中删除
         cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
         subprocess.run(cmd, check=True, timeout=600)
     except subprocess.TimeoutExpired:
         messagebox.showerror("拼接超时", "拼接进程超过10分钟未完成。")
         return
     except subprocess.CalledProcessError as e:
-        messagebox.showerror("拼接失败", f"Fiji 返回错误码 {e.returncode}。\n请检查图像文件或目录权限。")
+        messagebox.showerror("拼接失败", f"Fiji 返回错误码 {e.returncode}。\n请检查图像文件格式是否匹配，或目录权限。")
         return
     except Exception as e:
         messagebox.showerror("运行 Fiji 出错", str(e))
@@ -518,19 +520,30 @@ run("Quit");
             os.remove(macro_file)
 
     # ---------- 重命名 fused.tif 为 Stitched_Result.tif ----------
+    # 【注意】部分版本的 Fiji 拼接插件输出的文件名可能是 img_t1_z1_c1.tif
+    # 如果经常提示“拼接结果丢失”，请检查你的输出目录中实际生成的文件名并在这里修改
     fused_file = os.path.join(image_dir, "fused.tif")
+    fallback_fused_file = os.path.join(image_dir, "img_t1_z1_c1.tif") # 兼容另一种常见的输出命名
+    
     result_temp = os.path.join(image_dir, "Stitched_Result.tif")
+    
+    if os.path.exists(result_temp):
+        os.remove(result_temp)
+        
     if os.path.isfile(fused_file):
-        if os.path.exists(result_temp):
-            os.remove(result_temp)
         os.rename(fused_file, result_temp)
-    elif not os.path.isfile(result_temp):
+    elif os.path.isfile(fallback_fused_file):
+        os.rename(fallback_fused_file, result_temp)
+    else:
         messagebox.showerror("拼接结果丢失",
-                             f"未生成拼接文件。\n"
+                             f"未找到 fused.tif。\n"
                              f"请检查 Fiji 插件是否正常运行，或图像文件名是否匹配。")
+        status_var.set("就绪")
         return
 
     # ---------- 保存对话框，让用户自定义路径 ----------
+
+    
     save_path = filedialog.asksaveasfilename(
         title="保存拼接图像",
         defaultextension=".tif",
