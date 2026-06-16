@@ -458,7 +458,7 @@ def stitch_images():
     else:
         dir_for_macro = safe_dir
 
-    file_template = f"{prefix}{{iii}}.tif"
+    file_template = f"{prefix}{{iii}}.jpg"
 
     # 计算需要丢弃的 tile 索引 (1-based)
     missing = []
