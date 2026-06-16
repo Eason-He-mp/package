@@ -313,8 +313,7 @@ def run_scan(params):
 
         if stop_flag:
             root.after(0, lambda: status_var.set("已停止"))
-            root.after(0, root.deiconify)
-            return
+        else:
 
         
      # 扫描正常完成，先保存参数（供拼接使用）
