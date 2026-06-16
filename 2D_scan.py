@@ -316,22 +316,19 @@ def run_scan(params):
             root.after(0, root.deiconify)
             return
 
-        # 扫描正常完成
-        root.after(0, scan_complete, total)
+        
+        # 扫描正常完成，先保存参数（供拼接使用）
+      last_scan_params = {
+    'image_dir': image_dir,
+    'prefix': prefix,
+    'Nx': Nx,
+    'Ny': Ny,
+    'overlap': ov,
+    'total': total
+      }
 
-        # 保存最后一次扫描参数（供拼接使用）
-        last_scan_params = {
-            'image_dir': image_dir,
-            'prefix': prefix,
-            'Nx': Nx,
-            'Ny': Ny,
-            'overlap': ov,
-            'total': total
-        }
-
-        # 询问是否立即拼接
-        root.after(0, ask_stitch_after_scan)
-
+     # 然后调度 scan_complete（其中会调用 ask_stitch_after_scan）
+    root.after(0, scan_complete, total)
     except Exception as e:
         root.after(0, lambda err=str(e): messagebox.showerror("错误", err))
     finally:
@@ -559,9 +556,11 @@ def update_status(msg):
     status_var.set(msg)
 
 def scan_complete(total):
-    """扫描完成后的弹窗提示"""
+    """扫描完成弹窗，然后自动询问是否拼接"""
     messagebox.showinfo("完成", f"全部扫描完成！共 {total} 块数据已保存。")
     status_var.set("就绪")
+    # 弹窗关闭后，立即询问拼接
+    ask_stitch_after_scan()
 
 # ============================================================
 # 8. 构建图形用户界面
