@@ -327,8 +327,7 @@ last_scan_params = {
     'total': total
 }
 
-# 然后调度 scan_complete（其中会调用 ask_stitch_after_scan）
-root.after(0, scan_complete, total)
+
      # 然后调度 scan_complete（其中会调用 ask_stitch_after_scan）
     root.after(0, scan_complete, total)
     except Exception as e:
