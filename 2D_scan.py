@@ -346,7 +346,7 @@ def ask_stitch_after_scan():
         status_var.set("就绪（可点击“拼接图像”按钮进行拼接）")
 
 def stitch_images():
-    """执行拼接操作（图形化选择矩阵大小，使用 fused.tif 重命名方案）"""
+    """执行拼接操作（图形化选择矩阵大小，使用 Fuse and display + saveAs）"""
     if not last_scan_params:
         messagebox.showwarning("无扫描参数", "请先执行一次完整扫描。")
         return
@@ -368,7 +368,7 @@ def stitch_images():
     orig_Nx = params['Nx']
     orig_Ny = params['Ny']
 
-    # ---------- 矩阵选择 GUI ----------
+    # ---------- 矩阵选择 GUI（保持不变）----------
     dlg = tk.Toplevel(root)
     dlg.title("选择拼接范围（保留左上角区域）")
     dlg.resizable(False, False)
@@ -408,9 +408,9 @@ def stitch_images():
                 x2 = x1 + cell_size - 2
                 y2 = y1 + cell_size - 2
                 if i < keep_cols and j < keep_rows:
-                    color, outline = "#4CAF50", "#2E7D32"   # 绿色：保留
+                    color, outline = "#4CAF50", "#2E7D32"
                 else:
-                    color, outline = "#CCCCCC", "#999999"   # 灰色：丢弃
+                    color, outline = "#CCCCCC", "#999999"
                 canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline=outline)
                 idx = j * orig_Nx + i + 1
                 canvas.create_text(x1 + cell_size//2 - 1, y1 + cell_size//2 - 1,
@@ -443,18 +443,21 @@ def stitch_images():
 
     Nx_stitch, Ny_stitch = result["nx"], result["ny"]
 
-    # ---------- 路径处理（将反斜杠转为正斜杠，ImageJ 宏要求）----------
+    # ---------- 路径和文件模板 ----------
     prefix = params['prefix']
     overlap = params['overlap']
-    safe_dir = image_dir.replace('\\', '/')
-    
-    # 【修复1】ImageJ 宏中，带有空格的路径直接放在 [] 内即可，绝对不能加双引号
-    dir_for_macro = safe_dir
+    safe_dir = image_dir.replace('\\', '/')   # 正斜杠
 
-    # 【修复2】CT 图像通常为 .tif，如果你确定是其他格式（如 .bmp），请在这里修改
-    file_template = f"{prefix}{{iii}}.jpg"
+    # 注意：ImageJ 宏中方括号内可以直接包含空格，故不需要额外引号
+    # 但 saveAs 中如果路径含空格，必须用双引号包裹
+    save_dir = safe_dir
+    if ' ' in save_dir:
+        save_dir = f'"{save_dir}"'
 
-    # 计算需要丢弃的 tile 索引 (1-based)
+    # 【重要】请根据实际图像格式修改扩展名
+    file_template = f"{prefix}{{iii}}.jpg"   # 三位补零，例如 SampleA_001.tif
+
+    # 计算缺失的 tile
     missing = []
     for j in range(orig_Ny):
         for i in range(orig_Nx):
@@ -462,8 +465,8 @@ def stitch_images():
                 missing.append(j * orig_Nx + i + 1)
     missing_str = ",".join(str(t) for t in missing) if missing else ""
 
-    # ---------- 生成 ImageJ 宏 ----------
-    # 【修复3】将参数拼接成单行字符串，避免 ImageJ 宏解析器因换行符报错
+    # ---------- 生成 ImageJ 宏（Fuse and display + 手动保存）----------
+    # 拼接插件的参数串
     macro_args = (
         f"type=[Grid: row-by-row] "
         f"order=[Right & Down] "
@@ -471,7 +474,7 @@ def stitch_images():
         f"grid_size_y={orig_Ny} "
         f"tile_overlap={int(overlap*100)} "
         f"first_file_index_i=1 "
-        f"directory=[{dir_for_macro}] "
+        f"directory=[{safe_dir}] "
         f"file_names={file_template} "
         f"output_textfile_name=TileConfiguration.txt "
         f"fusion_method=[Linear Blending] "
@@ -479,15 +482,22 @@ def stitch_images():
         f"max/avg_displacement_threshold=2.50 "
         f"absolute_displacement_threshold=3.50 "
         f"computation_parameters=[Save memory (but be slower)] "
-        f"image_output=[Write to disk] "
-        f"output_directory=[{dir_for_macro}]"
+        f"image_output=[Fuse and display] "
+        f"output_directory=[{safe_dir}]"
     )
     if missing_str:
         macro_args += f" missing_tiles=[{missing_str}]"
 
-    macro_content = f'run("Grid/Collection stitching", "{macro_args}");\nrun("Quit");\n'
+    # 完整的宏内容：运行插件 → 等待完成 → 选中融合窗口 → 保存 → 退出
+    macro_content = (
+        f'run("Grid/Collection stitching", "{macro_args}");\n'
+        f'waitFor("Stitching");\n'
+        f'selectWindow("Fused*");\n'
+        f'saveAs("Tiff", "{save_dir}/Stitched_Result.tif");\n'
+        f'run("Quit");\n'
+    )
 
-    # ---------- 执行 Fiji 命令行 ----------
+    # ---------- 执行 Fiji ----------
     macro_file = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".ijm", delete=False, encoding="utf-8") as f:
@@ -500,14 +510,13 @@ def stitch_images():
     status_var.set("正在拼接图像，请稍候...")
     root.update_idletasks()
     try:
-        # 【注意】如果拼接插件在 headless 模式下崩溃，可尝试将 "--headless" 从列表中删除
         cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
         subprocess.run(cmd, check=True, timeout=600)
     except subprocess.TimeoutExpired:
         messagebox.showerror("拼接超时", "拼接进程超过10分钟未完成。")
         return
     except subprocess.CalledProcessError as e:
-        messagebox.showerror("拼接失败", f"Fiji 返回错误码 {e.returncode}。\n请检查图像文件格式是否匹配，或目录权限。")
+        messagebox.showerror("拼接失败", f"Fiji 返回错误码 {e.returncode}。\n请检查图像文件格式或目录权限。")
         return
     except Exception as e:
         messagebox.showerror("运行 Fiji 出错", str(e))
@@ -516,31 +525,16 @@ def stitch_images():
         if macro_file and os.path.exists(macro_file):
             os.remove(macro_file)
 
-    # ---------- 重命名 fused.tif 为 Stitched_Result.tif ----------
-    # 【注意】部分版本的 Fiji 拼接插件输出的文件名可能是 img_t1_z1_c1.tif
-    # 如果经常提示“拼接结果丢失”，请检查你的输出目录中实际生成的文件名并在这里修改
-    fused_file = os.path.join(image_dir, "fused.tif")
-    fallback_fused_file = os.path.join(image_dir, "img_t1_z1_c1.tif") # 兼容另一种常见的输出命名
-    
+    # ---------- 检查拼接结果 ----------
     result_temp = os.path.join(image_dir, "Stitched_Result.tif")
-    
-    if os.path.exists(result_temp):
-        os.remove(result_temp)
-        
-    if os.path.isfile(fused_file):
-        os.rename(fused_file, result_temp)
-    elif os.path.isfile(fallback_fused_file):
-        os.rename(fallback_fused_file, result_temp)
-    else:
+    if not os.path.isfile(result_temp):
         messagebox.showerror("拼接结果丢失",
-                             f"未找到 fused.tif。\n"
-                             f"请检查 Fiji 插件是否正常运行，或图像文件名是否匹配。")
+                             f"未找到 {result_temp}\n"
+                             "请确认图像文件名与模板匹配，或手动运行 Fiji 宏检查错误。")
         status_var.set("就绪")
         return
 
-    # ---------- 保存对话框，让用户自定义路径 ----------
-
-    
+    # ---------- 另存为对话框 ----------
     save_path = filedialog.asksaveasfilename(
         title="保存拼接图像",
         defaultextension=".tif",
@@ -550,7 +544,7 @@ def stitch_images():
         try:
             shutil.copy2(result_temp, save_path)
             messagebox.showinfo("拼接完成", f"拼接图像已保存至：\n{save_path}")
-            os.remove(result_temp)
+            os.remove(result_temp)   # 删除临时文件
         except Exception as e:
             messagebox.showerror("保存失败", str(e))
     else:
