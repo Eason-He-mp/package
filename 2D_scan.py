@@ -368,7 +368,7 @@ def stitch_images():
     orig_Nx = params['Nx']
     orig_Ny = params['Ny']
 
-    # ---------- 矩阵选择 GUI（保持不变）----------
+    # ---------- 矩阵选择 GUI ----------
     dlg = tk.Toplevel(root)
     dlg.title("选择拼接范围（保留左上角区域）")
     dlg.resizable(False, False)
@@ -448,14 +448,8 @@ def stitch_images():
     overlap = params['overlap']
     safe_dir = image_dir.replace('\\', '/')   # 正斜杠
 
-    # 注意：ImageJ 宏中方括号内可以直接包含空格，故不需要额外引号
-    # 但 saveAs 中如果路径含空格，必须用双引号包裹
-    save_dir = safe_dir
-    if ' ' in save_dir:
-        save_dir = f'"{save_dir}"'
-
-    # 【重要】请根据实际图像格式修改扩展名
-    file_template = f"{prefix}{{iii}}.jpg"   # 三位补零，例如 SampleA_001.tif
+    # 【重要】请根据实际图像格式修改扩展名，如果你的CT保存的是tif，请改为 .tif
+    file_template = f"{prefix}{{iii}}.jpg"
 
     # 计算缺失的 tile
     missing = []
@@ -466,7 +460,7 @@ def stitch_images():
     missing_str = ",".join(str(t) for t in missing) if missing else ""
 
     # ---------- 生成 ImageJ 宏（Fuse and display + 手动保存）----------
-    # 拼接插件的参数串
+    # 拼接插件的参数串（放在一行避免换行符错误）
     macro_args = (
         f"type=[Grid: row-by-row] "
         f"order=[Right & Down] "
@@ -488,12 +482,11 @@ def stitch_images():
     if missing_str:
         macro_args += f" missing_tiles=[{missing_str}]"
 
-    # 完整的宏内容：运行插件 → 等待完成 → 选中融合窗口 → 保存 → 退出
+    # 【修复】删除了 waitFor，修正了 selectWindow，修正了 saveAs 路径（直接用 safe_dir，不需要额外引号）
     macro_content = (
         f'run("Grid/Collection stitching", "{macro_args}");\n'
-        f'waitFor("Stitching");\n'
-        f'selectWindow("Fused*");\n'
-        f'saveAs("Tiff", "{save_dir}/Stitched_Result.tif");\n'
+        f'selectWindow("Fused");\n'
+        f'saveAs("Tiff", "{safe_dir}/Stitched_Result.tif");\n'
         f'run("Quit");\n'
     )
 
@@ -510,7 +503,8 @@ def stitch_images():
     status_var.set("正在拼接图像，请稍候...")
     root.update_idletasks()
     try:
-        cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
+        # 【修复】去掉了 "--headless"，因为 Fuse and display 需要 GUI 环境
+        cmd = [fiji_exe, "--console", "-macro", macro_file]
         subprocess.run(cmd, check=True, timeout=600)
     except subprocess.TimeoutExpired:
         messagebox.showerror("拼接超时", "拼接进程超过10分钟未完成。")
