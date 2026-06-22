@@ -510,7 +510,7 @@ def stitch_images():
         cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
-        if result.returncode != 0:
+        
             # 保存日志
             log_path = os.path.join(image_dir, "fiji_error.log")
             with open(log_path, "w", encoding="utf-8") as log:
