@@ -376,7 +376,7 @@ def stitch_images():
     root.update_idletasks()
 
     try:
-        cmd = [fiji_exe, "--console", "-macro", macro_file]   # 无 headless
+        cmd = [f'"{fiji_exe}"', "--console", "-macro", macro_file]  # 或者直接传递带引号的字符串  # 无 headless
         log_path = os.path.join(image_dir, "fiji_output.log")
         # 使用 CREATE_NO_WINDOW 避免弹出控制台，但 Fiji 的图形界面仍会出现（最小化处理）
         startupinfo = subprocess.STARTUPINFO()
