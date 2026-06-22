@@ -346,7 +346,7 @@ def ask_stitch_after_scan():
         status_var.set("就绪（可点击“拼接图像”按钮进行拼接）")
 
 def stitch_images():
-    """执行拼接操作（图形化选择矩阵大小，使用 Fuse and display + saveAs）"""
+    """执行拼接操作（图形化选择矩阵大小，使用 Fuse and display + saveAs，带日志捕获）"""
     if not last_scan_params:
         messagebox.showwarning("无扫描参数", "请先执行一次完整扫描。")
         return
@@ -446,9 +446,13 @@ def stitch_images():
     # ---------- 路径和文件模板 ----------
     prefix = params['prefix']
     overlap = params['overlap']
-    safe_dir = image_dir.replace('\\', '/')   # 正斜杠
+    safe_dir = image_dir.replace('\\', '/')
 
-    # 【重要】请根据实际图像格式修改扩展名，如果你的CT保存的是tif，请改为 .tif
+    save_dir = safe_dir
+    if ' ' in save_dir:
+        save_dir = f'"{save_dir}"'
+
+    # 根据你实际的文件名格式修改模板！
     file_template = f"{prefix}{{iii}}.jpg"
 
     # 计算缺失的 tile
@@ -459,8 +463,7 @@ def stitch_images():
                 missing.append(j * orig_Nx + i + 1)
     missing_str = ",".join(str(t) for t in missing) if missing else ""
 
-    # ---------- 生成 ImageJ 宏（Fuse and display + 手动保存）----------
-    # 拼接插件的参数串（放在一行避免换行符错误）
+    # ---------- 生成 ImageJ 宏 ----------
     macro_args = (
         f"type=[Grid: row-by-row] "
         f"order=[Right & Down] "
@@ -482,66 +485,61 @@ def stitch_images():
     if missing_str:
         macro_args += f" missing_tiles=[{missing_str}]"
 
-    # 【修复】删除了 waitFor，修正了 selectWindow，修正了 saveAs 路径（直接用 safe_dir，不需要额外引号）
     macro_content = (
         f'run("Grid/Collection stitching", "{macro_args}");\n'
-        f'selectWindow("Fused");\n'
-        f'saveAs("Tiff", "{safe_dir}/Stitched_Result.tif");\n'
+        f'waitFor("Stitching");\n'
+        f'selectWindow("Fused*");\n'
+        f'saveAs("Tiff", "{save_dir}/Stitched_Result.tif");\n'
         f'run("Quit");\n'
     )
 
-   # ---------- 执行 Fiji 命令行（带日志捕获）----------
-macro_file = None
-try:
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".ijm", delete=False, encoding="utf-8") as f:
-        f.write(macro_content)
-        macro_file = f.name
-except Exception as e:
-    messagebox.showerror("宏生成失败", str(e))
-    return
-
-status_var.set("正在拼接图像，请稍候...")
-root.update_idletasks()
-
-try:
-    cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
-    # 关键修改：capture_output=True 用于捕获输出，text=True 将字节转换为字符串
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-
-    # 如果返回码非零，说明 Fiji 报错，将输出写入临时日志并显示
-    if result.returncode != 0:
-        # 保存日志到图像目录下，方便查看
-        log_path = os.path.join(image_dir, "fiji_error.log")
-        with open(log_path, "w", encoding="utf-8") as log:
-            log.write("=== STDOUT ===\n")
-            log.write(result.stdout)
-            log.write("\n=== STDERR ===\n")
-            log.write(result.stderr)
-
-        messagebox.showerror("拼接失败",
-                             f"Fiji 返回错误码 {result.returncode}。\n\n"
-                             f"错误日志已保存至：\n{log_path}\n\n"
-                             f"常见原因：\n"
-                             f"1. 图像文件名与模板不匹配\n"
-                             f"2. 图像目录包含中文或空格\n"
-                             f"3. 插件未安装或参数错误\n"
-                             f"请查看日志文件获取详细信息。")
+    # ---------- 执行 Fiji（带日志捕获）----------
+    macro_file = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ijm", delete=False, encoding="utf-8") as f:
+            f.write(macro_content)
+            macro_file = f.name
+    except Exception as e:
+        messagebox.showerror("宏生成失败", str(e))
         return
-except subprocess.TimeoutExpired:
-    messagebox.showerror("拼接超时", "拼接进程超过10分钟未完成。")
-    return
-except Exception as e:
-    messagebox.showerror("运行 Fiji 出错", str(e))
-    return
-finally:
-    if macro_file and os.path.exists(macro_file):
-        os.remove(macro_file)
+
+    status_var.set("正在拼接图像，请稍候...")
+    root.update_idletasks()
+
+    try:
+        cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+        if result.returncode != 0:
+            # 保存日志
+            log_path = os.path.join(image_dir, "fiji_error.log")
+            with open(log_path, "w", encoding="utf-8") as log:
+                log.write("=== STDOUT ===\n")
+                log.write(result.stdout)
+                log.write("\n=== STDERR ===\n")
+                log.write(result.stderr)
+
+            messagebox.showerror("拼接失败",
+                                 f"Fiji 返回错误码 {result.returncode}。\n\n"
+                                 f"错误日志已保存至：\n{log_path}\n\n"
+                                 f"请查看日志文件获取详细信息。")
+            return
+    except subprocess.TimeoutExpired:
+        messagebox.showerror("拼接超时", "拼接进程超过10分钟未完成。")
+        return
+    except Exception as e:
+        messagebox.showerror("运行 Fiji 出错", str(e))
+        return
+    finally:
+        if macro_file and os.path.exists(macro_file):
+            os.remove(macro_file)
+
     # ---------- 检查拼接结果 ----------
     result_temp = os.path.join(image_dir, "Stitched_Result.tif")
     if not os.path.isfile(result_temp):
         messagebox.showerror("拼接结果丢失",
                              f"未找到 {result_temp}\n"
-                             "请确认图像文件名与模板匹配，或手动运行 Fiji 宏检查错误。")
+                             "请确认图像文件名与模板匹配，或查看 fiji_error.log。")
         status_var.set("就绪")
         return
 
@@ -555,14 +553,13 @@ finally:
         try:
             shutil.copy2(result_temp, save_path)
             messagebox.showinfo("拼接完成", f"拼接图像已保存至：\n{save_path}")
-            os.remove(result_temp)   # 删除临时文件
+            os.remove(result_temp)
         except Exception as e:
             messagebox.showerror("保存失败", str(e))
     else:
         messagebox.showwarning("未保存", f"拼接结果保留在：\n{result_temp}")
 
     status_var.set("就绪")
-
 # ============================================================
 # 7. GUI 更新函数
 # ============================================================
