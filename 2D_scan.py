@@ -452,8 +452,8 @@ def stitch_images():
     if ' ' in save_dir:
         save_dir = f'"{save_dir}"'
 
-    # 根据你实际的文件名格式修改模板！
-    file_template = f"{prefix}{{iii}}.jpg"
+    # 根据实际文件名格式修改模板（三位补零 .tif 示例）
+    file_template = f"{prefix}{{iii}}.tif"
 
     # 计算缺失的 tile
     missing = []
@@ -510,18 +510,22 @@ def stitch_images():
         cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
-        
-            # 保存日志
-       log_path = os.path.join(image_dir, "fiji_error.log")
-       with open(log_path, "w", encoding="utf-8") as log:
-                log.write("=== STDOUT ===\n")
-                log.write(result.stdout)
-                log.write("\n=== STDERR ===\n")
-                log.write(result.stderr)
+        # 始终写入日志（便于调试）
+        log_path = os.path.join(image_dir, "fiji_output.log")
+        with open(log_path, "w", encoding="utf-8") as log:
+            log.write("=== STDOUT ===\n")
+            log.write(result.stdout)
+            log.write("\n=== STDERR ===\n")
+            log.write(result.stderr)
 
+        if result.returncode != 0:
             messagebox.showerror("拼接失败",
                                  f"Fiji 返回错误码 {result.returncode}。\n\n"
-                                 f"错误日志已保存至：\n{log_path}\n\n"
+                                 f"详细日志已保存至：\n{log_path}\n\n"
+                                 f"常见原因：\n"
+                                 f"1. 图像文件名与模板不匹配\n"
+                                 f"2. 图像目录包含中文或空格\n"
+                                 f"3. 插件未安装或参数错误\n"
                                  f"请查看日志文件获取详细信息。")
             return
     except subprocess.TimeoutExpired:
@@ -539,7 +543,7 @@ def stitch_images():
     if not os.path.isfile(result_temp):
         messagebox.showerror("拼接结果丢失",
                              f"未找到 {result_temp}\n"
-                             "请确认图像文件名与模板匹配，或查看 fiji_error.log。")
+                             "请确认图像文件名与模板匹配，或查看 fiji_output.log。")
         status_var.set("就绪")
         return
 
