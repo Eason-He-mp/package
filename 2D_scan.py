@@ -512,8 +512,8 @@ def stitch_images():
 
         
             # 保存日志
-            log_path = os.path.join(image_dir, "fiji_error.log")
-            with open(log_path, "w", encoding="utf-8") as log:
+       log_path = os.path.join(image_dir, "fiji_error.log")
+       with open(log_path, "w", encoding="utf-8") as log:
                 log.write("=== STDOUT ===\n")
                 log.write(result.stdout)
                 log.write("\n=== STDERR ===\n")
