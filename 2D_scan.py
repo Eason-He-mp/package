@@ -507,37 +507,30 @@ def stitch_images():
     root.update_idletasks()
 
     try:
-        cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
+    log_path = os.path.join(image_dir, "fiji_output.log")
+    with open(log_path, "w", encoding="utf-8") as log:
+        # 所有输出直接存入日志文件
+        result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, timeout=600)
 
-        # 始终写入日志（便于调试）
-        log_path = os.path.join(image_dir, "fiji_output.log")
-        with open(log_path, "w", encoding="utf-8") as log:
-            log.write("=== STDOUT ===\n")
-            log.write(result.stdout)
-            log.write("\n=== STDERR ===\n")
-            log.write(result.stderr)
-
-        if result.returncode != 0:
-            messagebox.showerror("拼接失败",
-                                 f"Fiji 返回错误码 {result.returncode}。\n\n"
-                                 f"详细日志已保存至：\n{log_path}\n\n"
-                                 f"常见原因：\n"
-                                 f"1. 图像文件名与模板不匹配\n"
-                                 f"2. 图像目录包含中文或空格\n"
-                                 f"3. 插件未安装或参数错误\n"
-                                 f"请查看日志文件获取详细信息。")
-            return
-    except subprocess.TimeoutExpired:
-        messagebox.showerror("拼接超时", "拼接进程超过10分钟未完成。")
+    if result.returncode != 0:
+        messagebox.showerror("拼接失败",
+                             f"Fiji 返回错误码 {result.returncode}。\n\n"
+                             f"详细日志已保存至：\n{log_path}\n\n"
+                             f"请查看日志文件获取详细信息。")
         return
-    except Exception as e:
-        messagebox.showerror("运行 Fiji 出错", str(e))
-        return
-    finally:
-        if macro_file and os.path.exists(macro_file):
-            os.remove(macro_file)
-
+except subprocess.TimeoutExpired:
+    messagebox.showerror("拼接超时", "拼接进程超过10分钟未完成。")
+    return
+except FileNotFoundError:
+    messagebox.showerror("Fiji 未找到", f"找不到可执行文件：\n{fiji_exe}")
+    return
+except Exception as e:
+    messagebox.showerror("运行 Fiji 出错", str(e))
+    return
+finally:
+    if macro_file and os.path.exists(macro_file):
+        os.remove(macro_file)
     # ---------- 检查拼接结果 ----------
     result_temp = os.path.join(image_dir, "Stitched_Result.tif")
     if not os.path.isfile(result_temp):
