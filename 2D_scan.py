@@ -361,7 +361,8 @@ def stitch_images():
         'print("Image saved");\n'
         'run("Quit");\n'
     )
-
+    debug_msg = f"即将执行命令：\n{' '.join(cmd)}"
+    messagebox.showinfo("调试信息", debug_msg)
     # ---------- 执行 Fiji（无 headless，隐藏控制台窗口）----------
     macro_file = None
     try:
