@@ -472,7 +472,7 @@ def stitch_images():
     # ---------- 生成 ImageJ 宏（Write to disk）----------
     macro_args = (
         f"type=[Grid: row-by-row] "
-        f"order=[Right & Down] "
+        f"order=[Right & Down                ] "
         f"grid_size_x={orig_Nx} "
         f"grid_size_y={orig_Ny} "
         f"tile_overlap={int(overlap*100)} "
@@ -546,7 +546,7 @@ def stitch_images():
             os.remove(macro_file)
 
     # ---------- 查找并重命名结果文件 ----------
-    possible_names = ["img_t1_z1_c1.tif", "fused.tif"]
+    possible_names = ["img_t1_z1_c1"]
     found_file = None
     for name in possible_names:
         candidate = os.path.join(image_dir, name)
