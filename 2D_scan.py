@@ -449,7 +449,7 @@ def stitch_images():
     safe_dir = image_dir.replace('\\', '/')          # 转为正斜杠
 
     # 文件模板（根据实际修改，这里假设三位补零 .tif）
-    file_template = f"{prefix}{{iii}}.tif"
+    file_template = f"{prefix}{{iii}}.jpg"
 
     # 计算缺失的 tile
     missing = []
@@ -462,7 +462,7 @@ def stitch_images():
     # ---------- 生成 ImageJ 宏（Write to disk，无窗口操作）----------
     macro_args = (
         f"type=[Grid: row-by-row] "
-        f"order=[Right & Down] "
+        f"order=[Right & Down                ] "
         f"grid_size_x={orig_Nx} "
         f"grid_size_y={orig_Ny} "
         f"tile_overlap={int(overlap*100)} "
@@ -539,7 +539,7 @@ def stitch_images():
 
     # ---------- 查找并重命名结果文件 ----------
     # 实际输出文件名可能为 img_t1_z1_c1.tif（有时也是 fused.tif）
-    possible_names = ["img_t1_z1_c1.tif", "fused.tif"]
+    possible_names = ["img_t1_z1_c1.file", "fused.tif"]
     found_file = None
     for name in possible_names:
         candidate = os.path.join(image_dir, name)
