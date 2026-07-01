@@ -346,7 +346,7 @@ def ask_stitch_after_scan():
         status_var.set("就绪（可点击“拼接图像”按钮进行拼接）")
 
 def stitch_images():
-    """执行拼接操作（headless + Write to disk，自动重命名结果文件）"""
+    """执行拼接操作（headless + Write to disk，结果另存为 JPG）"""
     if not last_scan_params:
         messagebox.showwarning("无扫描参数", "请先执行一次完整扫描。")
         return
@@ -368,7 +368,7 @@ def stitch_images():
     orig_Nx = params['Nx']
     orig_Ny = params['Ny']
 
-    # ---------- 矩阵选择 GUI ----------
+    # ---------- 矩阵选择 GUI（居中显示）----------
     dlg = tk.Toplevel(root)
     dlg.title("选择拼接范围（保留左上角区域）")
     dlg.resizable(False, False)
@@ -436,6 +436,16 @@ def stitch_images():
     tk.Button(btn_frame, text="确定", command=confirm).pack(side="left", padx=10)
     tk.Button(btn_frame, text="取消", command=cancel).pack(side="left", padx=10)
 
+    # 窗口居中
+    dlg.update_idletasks()
+    w = dlg.winfo_width()
+    h = dlg.winfo_height()
+    sw = dlg.winfo_screenwidth()
+    sh = dlg.winfo_screenheight()
+    x = (sw - w) // 2
+    y = (sh - h) // 2
+    dlg.geometry(f"+{x}+{y}")
+
     root.wait_window(dlg)
     if not result["confirmed"]:
         status_var.set("拼接已取消")
@@ -446,10 +456,10 @@ def stitch_images():
     # ---------- 路径和文件模板 ----------
     prefix = params['prefix']
     overlap = params['overlap']
-    safe_dir = image_dir.replace('\\', '/')          # 转为正斜杠
+    safe_dir = image_dir.replace('\\', '/')
 
-    # 文件模板（根据实际修改，这里假设三位补零 .tif）
-    file_template = f"{prefix}{{iii}}.jpg"
+    # 文件模板（根据实际修改）
+    file_template = f"{prefix}{{iii}}.tif"
 
     # 计算缺失的 tile
     missing = []
@@ -459,10 +469,10 @@ def stitch_images():
                 missing.append(j * orig_Nx + i + 1)
     missing_str = ",".join(str(t) for t in missing) if missing else ""
 
-    # ---------- 生成 ImageJ 宏（Write to disk，无窗口操作）----------
+    # ---------- 生成 ImageJ 宏（Write to disk）----------
     macro_args = (
         f"type=[Grid: row-by-row] "
-        f"order=[Right & Down                ] "
+        f"order=[Right & Down] "
         f"grid_size_x={orig_Nx} "
         f"grid_size_y={orig_Ny} "
         f"tile_overlap={int(overlap*100)} "
@@ -476,12 +486,11 @@ def stitch_images():
         f"absolute_displacement_threshold=3.50 "
         f"computation_parameters=[Save memory (but be slower)] "
         f"image_output=[Write to disk] "
-        f"output_directory=[{safe_dir}] "   # 末尾空格防粘连
+        f"output_directory=[{safe_dir}] "
     )
     if missing_str:
         macro_args += f"missing_tiles=[{missing_str}]"
 
-    # 简洁宏，只运行拼接，然后退出（不需要 waitFor 等）
     macro_content = (
         f'run("Grid/Collection stitching", "{macro_args}");\n'
         f'run("Quit");\n'
@@ -513,7 +522,6 @@ def stitch_images():
             )
 
         if result.returncode != 0:
-            # 尝试读取日志前500字符供显示
             try:
                 with open(log_path, "r", encoding="utf-8") as lf:
                     log_preview = lf.read(500)
@@ -538,8 +546,7 @@ def stitch_images():
             os.remove(macro_file)
 
     # ---------- 查找并重命名结果文件 ----------
-    # 实际输出文件名可能为 img_t1_z1_c1（有时也是 fused.tif）
-    possible_names = ["img_t1_z1_c1", "fused.tif"]
+    possible_names = ["img_t1_z1_c1.tif", "fused.tif"]
     found_file = None
     for name in possible_names:
         candidate = os.path.join(image_dir, name)
@@ -555,17 +562,18 @@ def stitch_images():
         status_var.set("就绪")
         return
 
-    # 重命名为统一的结果文件
     result_temp = os.path.join(image_dir, "Stitched_Result.tif")
     if os.path.exists(result_temp):
         os.remove(result_temp)
     os.rename(found_file, result_temp)
 
-    # ---------- 另存为对话框 ----------
+    # ---------- 另存为对话框（仅 JPG，默认文件名 prefix_Merge）----------
+    default_filename = f"{prefix}_Merge.jpg"
     save_path = filedialog.asksaveasfilename(
         title="保存拼接图像",
-        defaultextension=".tif",
-        filetypes=[("TIFF files", "*.tif"), ("All files", "*.*")]
+        defaultextension=".jpg",
+        filetypes=[("JPEG files", "*.jpg")],
+        initialfile=default_filename
     )
     if save_path:
         try:
@@ -777,5 +785,14 @@ def on_press(key):
 listener = pynput_keyboard.Listener(on_press=on_press)
 listener.start()
 
+# 主窗口居中
+root.update_idletasks()
+width = root.winfo_width()
+height = root.winfo_height()
+screen_width = root.winfo_screenwidth()
+screen_height = root.winfo_screenheight()
+x = (screen_width - width) // 2
+y = (screen_height - height) // 2
+root.geometry(f"+{x}+{y}")
 # 启动 GUI 主循环
 root.mainloop()
