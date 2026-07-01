@@ -538,8 +538,8 @@ def stitch_images():
             os.remove(macro_file)
 
     # ---------- 查找并重命名结果文件 ----------
-    # 实际输出文件名可能为 img_t1_z1_c1.tif（有时也是 fused.tif）
-    possible_names = ["img_t1_z1_c1.file", "fused.tif"]
+    # 实际输出文件名可能为 img_t1_z1_c1（有时也是 fused.tif）
+    possible_names = ["img_t1_z1_c1", "fused.tif"]
     found_file = None
     for name in possible_names:
         candidate = os.path.join(image_dir, name)
