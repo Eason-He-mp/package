@@ -459,7 +459,7 @@ def stitch_images():
     safe_dir = image_dir.replace('\\', '/')
 
     # 文件模板（根据实际修改）
-    file_template = f"{prefix}{{iii}}.tif"
+    file_template = f"{prefix}{{iii}}.jpg"
 
     # 计算缺失的 tile
     missing = []
