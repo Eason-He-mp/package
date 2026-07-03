@@ -341,8 +341,6 @@ def ask_stitch_after_scan():
     ans = messagebox.askyesno("拼接", "扫描已完成。\n是否立即进行图像拼接？")
     if ans:
         stitch_images()
-    else:
-        btn_stitch.config(state="normal")
         status_var.set("就绪（可点击“拼接图像”按钮进行拼接）")
 
 def stitch_images():
@@ -695,8 +693,8 @@ btn_frame = tk.Frame(root)
 btn_frame.pack(pady=5)
 tk.Button(btn_frame, text="开始扫描", width=12, command=lambda: start_scan_thread()).pack(side="left", padx=5)
 tk.Button(btn_frame, text="停止", width=8, command=lambda: set_stop()).pack(side="left", padx=5)
-# 拼接按钮，初始禁用（扫描完成后启用）
-btn_stitch = tk.Button(btn_frame, text="拼接图像", width=10, command=stitch_images, state="disabled")
+# 拼接按钮
+btn_stitch = tk.Button(btn_frame, text="拼接图像", width=10, command=stitch_images)
 btn_stitch.pack(side="left", padx=5)
 tk.Button(btn_frame, text="退出", width=8, command=root.quit).pack(side="left", padx=5)
 
@@ -763,8 +761,7 @@ def start_scan_thread():
         'ImageDir': image_dir
     }
 
-    # 禁用拼接按钮（新一轮扫描）
-    btn_stitch.config(state="disabled")
+   
     t = threading.Thread(target=run_scan, args=(params,), daemon=True)
     t.start()
 
