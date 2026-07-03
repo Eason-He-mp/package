@@ -341,10 +341,10 @@ def ask_stitch_after_scan():
     ans = messagebox.askyesno("拼接", "扫描已完成。\n是否立即进行图像拼接？")
     if ans:
         stitch_images()
-    else:
-        btn_stitch.config(state="normal")
-        status_var.set("就绪（可点击“拼接图像”按钮进行拼接）")
-
+    # 无论是否立即拼接，都将拼接按钮设置为可用（拼接结束后可以再次拼接）
+    btn_stitch.config(state="normal")
+    status_var.set("就绪（可点击“拼接图像”按钮调整区域再次拼接）")
+  
 def stitch_images():
     """执行拼接操作（图形化选择矩阵大小，使用 Fuse and display + saveAs，无 headless 模式）"""
     # ... 前面的检查、GUI、路径准备代码不变 ...
@@ -437,7 +437,7 @@ def stitch_images():
             messagebox.showerror("保存失败", str(e))
     else:
         messagebox.showwarning("未保存", f"拼接结果保留在：\n{result_temp}")
-
+    btn_stitch.config(state="normal")
     status_var.set("就绪")
 # ============================================================
 # 7. GUI 更新函数
