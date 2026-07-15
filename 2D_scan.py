@@ -519,7 +519,7 @@ def stitch_images():
         log_path = os.path.join(temp_dir, "fiji_output.log")
         with open(log_path, "w", encoding="utf-8") as log:
             result_proc = subprocess.run(
-                [fiji_exe, "--headless", "--console", "-macro", macro_file],
+                [fiji_exe, "--console", "-macro", macro_file],
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 timeout=600
