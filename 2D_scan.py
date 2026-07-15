@@ -583,7 +583,7 @@ def stitch_images():
         # 清理临时文件
         if macro_file and os.path.exists(macro_file):
             os.remove(macro_file)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        #shutil.rmtree(temp_dir, ignore_errors=True)
 
     status_var.set("就绪")
 # ============================================================
