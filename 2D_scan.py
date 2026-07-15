@@ -18,7 +18,7 @@
 import sys
 import json
 import os
-import file
+import tempfile
 import shutil
 import subprocess
 import threading
