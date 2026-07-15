@@ -344,7 +344,7 @@ def ask_stitch_after_scan():
         status_var.set("就绪（可点击“拼接图像”按钮进行拼接）")
 
 def stitch_images():
-    """执行拼接操作（headless + Write to disk，结果另存为 JPG）"""
+    """执行拼接操作（临时目录方案，确保只拼接所选区域）"""
     if not last_scan_params:
         messagebox.showwarning("无扫描参数", "请先执行一次完整扫描。")
         return
@@ -440,9 +440,7 @@ def stitch_images():
     h = dlg.winfo_height()
     sw = dlg.winfo_screenwidth()
     sh = dlg.winfo_screenheight()
-    x = (sw - w) // 2
-    y = (sh - h) // 2
-    dlg.geometry(f"+{x}+{y}")
+    dlg.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
 
     root.wait_window(dlg)
     if not result["confirmed"]:
@@ -451,137 +449,141 @@ def stitch_images():
 
     Nx_stitch, Ny_stitch = result["nx"], result["ny"]
 
-    # ---------- 路径和文件模板 ----------
+    # ---------- 准备文件（复制选中图像到临时目录，重新编号）----------
     prefix = params['prefix']
     overlap = params['overlap']
-    safe_dir = image_dir.replace('\\', '/')
 
-    # 文件模板（根据实际修改）
-    file_template = f"{prefix}{{iii}}.jpg"
-
-    # 计算缺失的 tile
-    missing = []
-    for j in range(orig_Ny):
-        for i in range(orig_Nx):
-            if i >= Nx_stitch or j >= Ny_stitch:
-                missing.append(j * orig_Nx + i + 1)
-    missing_str = ",".join(str(t) for t in missing) if missing else ""
-
-    # ---------- 生成 ImageJ 宏（Write to disk）----------
-    macro_args = (
-        f"type=[Grid: row-by-row] "
-        f"order=[Right & Down                ] "
-        f"grid_size_x={orig_Nx} "
-        f"grid_size_y={orig_Ny} "
-        f"tile_overlap={int(overlap*100)} "
-        f"first_file_index_i=1 "
-        f"directory=[{safe_dir}] "
-        f"file_names={file_template} "
-        f"output_textfile_name=TileConfiguration.txt "
-        f"fusion_method=[Linear Blending] "
-        f"regression_threshold=0.30 "
-        f"max/avg_displacement_threshold=2.50 "
-        f"absolute_displacement_threshold=3.50 "
-        f"computation_parameters=[Save memory (but be slower)] "
-        f"image_output=[Write to disk] "
-        f"output_directory=[{safe_dir}] "
-    )
-    if missing_str:
-        macro_args += f"missing_tiles=[{missing_str}]"
-
-    macro_content = (
-        f'run("Grid/Collection stitching", "{macro_args}");\n'
-        f'run("Quit");\n'
-    )
-
-    # ---------- 执行 Fiji (headless) ----------
-    macro_file = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".ijm", delete=False, encoding="utf-8") as f:
-            f.write(macro_content)
-            macro_file = f.name
-    except Exception as e:
-        messagebox.showerror("宏生成失败", str(e))
-        return
-
-    status_var.set("正在拼接图像，请稍候...")
-    root.update_idletasks()
+    # 根据您的原始图像格式，此处假设为 .jpg（与之前代码中 {iii}.jpg 一致）
+    ext = ".jpg"  # 如果实际为 .tif，请改为 ".tif"
+    temp_dir = tempfile.mkdtemp(prefix="stitch_")
 
     try:
-        cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
-        log_path = os.path.join(image_dir, "fiji_output.log")
+        for j in range(Ny_stitch):
+            for i in range(Nx_stitch):
+                # 原始序号（行优先，1-based）
+                src_idx = j * orig_Nx + i + 1
+                src_name = f"{prefix}{src_idx:03d}{ext}"
+                src_path = os.path.join(image_dir, src_name)
+                # 新序号连续编号，从 1 开始
+                dst_idx = j * Nx_stitch + i + 1
+                dst_name = f"{prefix}_{dst_idx}{ext}"
+                dst_path = os.path.join(temp_dir, dst_name)
 
+                if not os.path.isfile(src_path):
+                    messagebox.showerror("文件缺失", f"未找到图像文件：{src_name}")
+                    return
+                shutil.copy2(src_path, dst_path)
+
+        # ---------- 生成 ImageJ 宏（针对临时目录）----------
+        safe_dir = temp_dir.replace('\\', '/')
+        file_template = f"{prefix}_%d{ext}"   # 连续编号，无前导零
+
+        # 注意：以下参数中特意保留了多余空格，请勿删除（防止 Notepad 换行解析错误）
+        macro_args = (
+            f"type=[Grid: row-by-row] "
+            f"order=[Right & Down                ] "   # 必须保留大量空格
+            f"grid_size_x={Nx_stitch} "
+            f"grid_size_y={Ny_stitch} "
+            f"tile_overlap={int(overlap*100)} "
+            f"first_file_index_i=1 "
+            f"directory=[{safe_dir}] "
+            f"file_names={file_template} "
+            f"output_textfile_name=TileConfiguration.txt "
+            f"fusion_method=[Linear Blending] "
+            f"regression_threshold=0.30 "
+            f"max/avg_displacement_threshold=2.50 "
+            f"absolute_displacement_threshold=3.50 "
+            f"computation_parameters=[Save memory (but be slower)] "
+            f"image_output=[Write to disk] "
+            f"output_directory=[{safe_dir}] "
+        )
+
+        macro_content = (
+            f'run("Grid/Collection stitching", "{macro_args}");\n'
+            f'run("Quit");\n'
+        )
+
+        # ---------- 执行 Fiji (headless) ----------
+        macro_file = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".ijm", delete=False, encoding="utf-8") as f:
+                f.write(macro_content)
+                macro_file = f.name
+        except Exception as e:
+            messagebox.showerror("宏生成失败", str(e))
+            return
+
+        status_var.set("正在拼接图像，请稍候...")
+        root.update_idletasks()
+
+        log_path = os.path.join(temp_dir, "fiji_output.log")
         with open(log_path, "w", encoding="utf-8") as log:
-            result = subprocess.run(
-                cmd,
+            result_proc = subprocess.run(
+                [fiji_exe, "--headless", "--console", "-macro", macro_file],
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 timeout=600
             )
 
-        if result.returncode != 0:
+        if result_proc.returncode != 0:
             try:
                 with open(log_path, "r", encoding="utf-8") as lf:
                     log_preview = lf.read(500)
             except:
                 log_preview = "无法读取日志"
             messagebox.showerror("拼接失败",
-                                 f"Fiji 返回错误码 {result.returncode}。\n\n"
+                                 f"Fiji 返回错误码 {result_proc.returncode}。\n\n"
                                  f"日志前500字符：\n{log_preview}\n\n"
                                  f"完整日志：{log_path}")
             return
+
+        # ---------- 查找拼接结果（您的 Fiji 输出文件名可能为 img_t1_z1_c1 无后缀或 .tif）----------
+        found_file = None
+        for name in ["img_t1_z1_c1.tif", "img_t1_z1_c1", "fused.tif"]:
+            candidate = os.path.join(temp_dir, name)
+            if os.path.isfile(candidate):
+                found_file = candidate
+                break
+
+        if found_file is None:
+            messagebox.showerror("拼接结果丢失",
+                                 "未找到拼接结果文件，请检查 Fiji 日志。")
+            return
+
+        # 重命名为统一的临时结果（可选）
+        result_temp = os.path.join(temp_dir, "Stitched_Result.tif")
+        if os.path.exists(result_temp):
+            os.remove(result_temp)
+        os.rename(found_file, result_temp)
+
+        # ---------- 另存为对话框（默认 JPG）----------
+        default_filename = f"{prefix}_Merge.jpg"
+        save_path = filedialog.asksaveasfilename(
+            title="保存拼接图像",
+            defaultextension=".jpg",
+            filetypes=[("JPEG files", "*.jpg")],
+            initialfile=default_filename
+        )
+        if save_path:
+            try:
+                shutil.copy2(result_temp, save_path)
+                messagebox.showinfo("拼接完成", f"拼接图像已保存至：\n{save_path}")
+            except Exception as e:
+                messagebox.showerror("保存失败", str(e))
+        else:
+            messagebox.showwarning("未保存", "拼接结果未保存，临时文件已删除。")
+
     except subprocess.TimeoutExpired:
         messagebox.showerror("拼接超时", "拼接进程超过10分钟未完成。")
-        return
     except FileNotFoundError:
         messagebox.showerror("Fiji 未找到", f"找不到可执行文件：\n{fiji_exe}")
-        return
     except Exception as e:
         messagebox.showerror("运行 Fiji 出错", str(e))
-        return
     finally:
+        # 清理临时文件
         if macro_file and os.path.exists(macro_file):
             os.remove(macro_file)
-
-    # ---------- 查找并重命名结果文件 ----------
-    possible_names = ["img_t1_z1_c1"]
-    found_file = None
-    for name in possible_names:
-        candidate = os.path.join(image_dir, name)
-        if os.path.isfile(candidate):
-            found_file = candidate
-            break
-
-    if found_file is None:
-        messagebox.showerror("拼接结果丢失",
-                             f"未找到拼接结果文件。\n"
-                             f"尝试的文件名：{possible_names}\n"
-                             f"请检查 Fiji 日志或手动运行宏。")
-        status_var.set("就绪")
-        return
-
-    result_temp = os.path.join(image_dir, "Stitched_Result.tif")
-    if os.path.exists(result_temp):
-        os.remove(result_temp)
-    os.rename(found_file, result_temp)
-
-    # ---------- 另存为对话框（仅 JPG，默认文件名 prefix_Merge）----------
-    default_filename = f"{prefix}_Merge.jpg"
-    save_path = filedialog.asksaveasfilename(
-        title="保存拼接图像",
-        defaultextension=".jpg",
-        filetypes=[("JPEG files", "*.jpg")],
-        initialfile=default_filename
-    )
-    if save_path:
-        try:
-            shutil.copy2(result_temp, save_path)
-            messagebox.showinfo("拼接完成", f"拼接图像已保存至：\n{save_path}")
-            os.remove(result_temp)
-        except Exception as e:
-            messagebox.showerror("保存失败", str(e))
-    else:
-        messagebox.showwarning("未保存", f"拼接结果保留在：\n{result_temp}")
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     status_var.set("就绪")
 # ============================================================
