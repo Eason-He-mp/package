@@ -477,7 +477,7 @@ def stitch_images():
 
         # ---------- 生成 ImageJ 宏（针对临时目录）----------
         safe_dir = temp_dir.replace('\\', '/')
-        file_template = f"{prefix}{{iii}}{ext}"   # 连续编号，无前导零
+        file_template = f"{prefix}_%d{ext}"   # 对应临时目录中的文件命名  # 连续编号，无前导零
 
         # 注意：以下参数中特意保留了多余空格，请勿删除（防止 Notepad 换行解析错误）
         macro_args = (
