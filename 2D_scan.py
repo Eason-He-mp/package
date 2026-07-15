@@ -18,7 +18,7 @@
 import sys
 import json
 import os
-import tempfile
+import file
 import shutil
 import subprocess
 import threading
@@ -456,6 +456,7 @@ def stitch_images():
     # 根据您的原始图像格式，此处假设为 .jpg（与之前代码中 {iii}.jpg 一致）
     ext = ".jpg"  # 如果实际为 .tif，请改为 ".tif"
     temp_dir = tempfile.mkdtemp(prefix="stitch_")
+    messagebox.showinfo("临时目录", f"临时文件位于：\n{temp_dir}")
 
     try:
         for j in range(Ny_stitch):
