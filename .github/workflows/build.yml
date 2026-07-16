@@ -23,7 +23,7 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-            - name: 解压并准备 32 位 Tesseract
+      - name: 解压并准备 32 位 Tesseract
         shell: pwsh
         run: |
           $zipPath = "Tesseract-OCR.zip"
@@ -51,7 +51,7 @@ jobs:
           if (!(Test-Path "C:\tesseract\tesseract.exe")) { Write-Error "tesseract.exe 未就位"; exit 1 }
           if (!(Test-Path "C:\tesseract\tessdata\eng.traineddata")) { Write-Error "eng.traineddata 未找到"; exit 1 }
           Write-Host "Tesseract 准备就绪，语言包已包含"
-          
+
       - name: 打包 CT 扫描主程序
         run: |
           pyinstaller --onefile --windowed --name CT_Scan_Tool 2D_scan.py `
