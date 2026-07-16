@@ -17,5 +17,9 @@
     "integration_dropdown_right": 260,
     "integration_dropdown_top": 220,
     "integration_dropdown_bottom": 480
+    "coordinate_display": {
+    "x_area": [100, 50, 80, 30],
+    "y_area": [100, 90, 80, 30]
+}
   }
 }
