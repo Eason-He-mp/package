@@ -453,21 +453,17 @@ def stitch_images():
     prefix = params['prefix']
     overlap = params['overlap']
 
-    # 根据您的原始图像格式，此处假设为 .jpg（与之前代码中 {iii}.jpg 一致）
-    ext = ".jpg"  # 如果实际为 .tif，请改为 ".tif"
+    ext = ".jpg"  # 根据实际图像格式修改
     temp_dir = tempfile.mkdtemp(prefix="stitch_")
-    messagebox.showinfo("临时目录", f"临时文件位于：\n{temp_dir}")
 
     try:
         for j in range(Ny_stitch):
             for i in range(Nx_stitch):
-                # 原始序号（行优先，1-based）
                 src_idx = j * orig_Nx + i + 1
                 src_name = f"{prefix}{src_idx:03d}{ext}"
                 src_path = os.path.join(image_dir, src_name)
-                # 新序号连续编号，从 1 开始
                 dst_idx = j * Nx_stitch + i + 1
-                dst_name = f"{prefix}{dst_idx:03d}{ext}" 
+                dst_name = f"{prefix}{dst_idx:03d}{ext}"
                 dst_path = os.path.join(temp_dir, dst_name)
 
                 if not os.path.isfile(src_path):
@@ -478,11 +474,10 @@ def stitch_images():
         # ---------- 生成 ImageJ 宏（针对临时目录）----------
         safe_dir = temp_dir.replace('\\', '/')
         file_template = f"{prefix}{{iii}}{ext}"
-      
-        # 注意：以下参数中特意保留了多余空格，请勿删除（防止 Notepad 换行解析错误）
+
         macro_args = (
             f"type=[Grid: row-by-row] "
-            f"order=[Right & Down                ] "   # 必须保留大量空格
+            f"order=[Right & Down                ] "   # 保留空格，勿删
             f"grid_size_x={Nx_stitch} "
             f"grid_size_y={Ny_stitch} "
             f"tile_overlap={int(overlap*100)} "
@@ -520,7 +515,7 @@ def stitch_images():
         log_path = os.path.join(temp_dir, "fiji_output.log")
         with open(log_path, "w", encoding="utf-8") as log:
             result_proc = subprocess.run(
-                [fiji_exe, "--console", "-macro", macro_file],
+                [fiji_exe, "--headless", "--console", "-macro", macro_file],
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 timeout=600
@@ -538,7 +533,7 @@ def stitch_images():
                                  f"完整日志：{log_path}")
             return
 
-        # ---------- 查找拼接结果（您的 Fiji 输出文件名可能为 img_t1_z1_c1 无后缀或 .tif）----------
+        # ---------- 查找拼接结果 ----------
         found_file = None
         for name in ["img_t1_z1_c1.tif", "img_t1_z1_c1", "fused.tif"]:
             candidate = os.path.join(temp_dir, name)
@@ -551,7 +546,6 @@ def stitch_images():
                                  "未找到拼接结果文件，请检查 Fiji 日志。")
             return
 
-        # 重命名为统一的临时结果（可选）
         result_temp = os.path.join(temp_dir, "Stitched_Result.tif")
         if os.path.exists(result_temp):
             os.remove(result_temp)
@@ -584,7 +578,7 @@ def stitch_images():
         # 清理临时文件
         if macro_file and os.path.exists(macro_file):
             os.remove(macro_file)
-        #shutil.rmtree(temp_dir, ignore_errors=True)
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     status_var.set("就绪")
 # ============================================================
