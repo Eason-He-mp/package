@@ -467,7 +467,7 @@ def stitch_images():
                 src_path = os.path.join(image_dir, src_name)
                 # 新序号连续编号，从 1 开始
                 dst_idx = j * Nx_stitch + i + 1
-                dst_name = f"{prefix}_{dst_idx}{ext}"
+                dst_name = f"{prefix}{dst_idx:03d}{ext}" 
                 dst_path = os.path.join(temp_dir, dst_name)
 
                 if not os.path.isfile(src_path):
@@ -477,8 +477,8 @@ def stitch_images():
 
         # ---------- 生成 ImageJ 宏（针对临时目录）----------
         safe_dir = temp_dir.replace('\\', '/')
-        file_template = f"{prefix}_%d{ext}"   # 对应临时目录中的文件命名  # 连续编号，无前导零
-
+        file_template = f"{prefix}{{iii}}{ext}"
+      
         # 注意：以下参数中特意保留了多余空格，请勿删除（防止 Notepad 换行解析错误）
         macro_args = (
             f"type=[Grid: row-by-row] "
