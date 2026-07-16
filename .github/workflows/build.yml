@@ -1,11 +1,11 @@
 name: Build Windows EXE
 
 on:
-  workflow_dispatch:            # 手动触发
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-2022       # Windows Server 2022
+    runs-on: windows-2022
 
     steps:
       - name: 检出代码
@@ -15,7 +15,7 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-          architecture: 'x86'   # 32 位，兼容性最佳
+          architecture: 'x86'
 
       - name: 安装 Python 依赖
         run: |
@@ -25,17 +25,28 @@ jobs:
 
       - name: 下载并提取 Tesseract (32-bit portable)
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 获取最新 release 的资产信息
-          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/UB-Mannheim/tesseract/releases/latest"
-          # 查找 32 位便携版 ZIP 文件
+          # 方法1：通过 GitHub API 获取最新便携版（带认证）
+          $headers = @{ Authorization = "Bearer $env:GITHUB_TOKEN" }
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/UB-Mannheim/tesseract/releases/latest" -Headers $headers
           $asset = $release.assets | Where-Object { $_.name -like "*w32-portable*" } | Select-Object -First 1
-          if (-not $asset) { Write-Error "未找到 32 位便携版 Tesseract"; exit 1 }
-          Write-Host "下载: $($asset.browser_download_url)"
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile portable.zip
-          # 解压到 C:\tesseract
+
+          if (-not $asset) {
+            # 输出所有资产名称以便排查
+            Write-Host "未找到 w32-portable，当前发布的资产："
+            $release.assets | ForEach-Object { Write-Host $_.name }
+            # 方法2：使用已知的稳定版本直接下载
+            $url = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.5.0/tesseract-ocr-w32-portable-5.5.0.zip"
+            Write-Host "尝试直接下载: $url"
+            Invoke-WebRequest -Uri $url -OutFile portable.zip
+          } else {
+            Write-Host "下载: $($asset.browser_download_url)"
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile portable.zip
+          }
+
           Expand-Archive portable.zip -DestinationPath C:\tesseract
-          # 确认文件存在
           if (!(Test-Path "C:\tesseract\tesseract.exe")) { Write-Error "tesseract.exe 未找到"; exit 1 }
           if (!(Test-Path "C:\tesseract\tessdata\eng.traineddata")) { Write-Error "eng.traineddata 未找到"; exit 1 }
 
