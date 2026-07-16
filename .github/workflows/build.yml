@@ -1,70 +1,28 @@
-name: Build Windows EXE
-
-on:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: windows-2022
-
-    steps:
-      - name: 检出代码（包含 Tesseract ZIP）
-        uses: actions/checkout@v6
-
-      - name: 设置 Python (32-bit)
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-          architecture: 'x86'
-
-      - name: 安装 Python 依赖
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
-
-      - name: 解压 32 位 Tesseract 便携版
+      - name: 解压并准备 32 位 Tesseract
         shell: pwsh
         run: |
-          $zipPath = "Tesseract-OCR.zip"   # 根目录下的文件名
+          $zipPath = "Tesseract-OCR.zip"
           if (!(Test-Path $zipPath)) { Write-Error "ZIP 文件未找到: $zipPath"; exit 1 }
           Expand-Archive -Path $zipPath -DestinationPath C:\tesseract
-          # 确认 tesseract.exe 位置（可能直接在 C:\tesseract 下，也可能在子目录中）
+
+          # 查找 tesseract.exe 并确保其在 C:\tesseract 根目录
           $exe = Get-ChildItem -Path C:\tesseract -Recurse -Name "tesseract.exe" | Select-Object -First 1
-          if (-not $exe) { Write-Error "tesseract.exe 未找到"; exit 1 }
-          $exeDir = Split-Path -Parent (Join-Path C:\tesseract $exe)
-          # 如果 tesseract.exe 不在 C:\tesseract 根目录，将其移动到根目录
-          if ($exeDir -ne "C:\tesseract") {
-            Move-Item -Path (Join-Path C:\tesseract $exe) -Destination C:\tesseract\tesseract.exe -Force
+          if (-not $exe) { Write-Error "tesseract.exe 未在解压文件中找到"; exit 1 }
+          $exeFullPath = Join-Path C:\tesseract $exe
+          if ($exeFullPath -ne "C:\tesseract\tesseract.exe") {
+            Move-Item -Path $exeFullPath -Destination C:\tesseract\tesseract.exe -Force
           }
-          # 同样处理 tessdata 文件夹
-          $tessdata = Get-ChildItem -Path C:\tesseract -Recurse -Directory -Name "tessdata" | Select-Object -First 1
-          if (-not $tessdata) { Write-Error "tessdata 文件夹未找到"; exit 1 }
-          $tessdataPath = Join-Path C:\tesseract $tessdata
-          if ($tessdataPath -ne "C:\tesseract\tessdata") {
-            Move-Item -Path $tessdataPath -Destination C:\tesseract\tessdata -Force
+
+          # 查找 tessdata 文件夹并确保其在 C:\tesseract 根目录
+          $tessdataDir = Get-ChildItem -Path C:\tesseract -Recurse -Directory -Name "tessdata" | Select-Object -First 1
+          if (-not $tessdataDir) { Write-Error "tessdata 文件夹未找到"; exit 1 }
+          $tessdataFullPath = Join-Path C:\tesseract $tessdataDir
+          if ($tessdataFullPath -ne "C:\tesseract\tessdata") {
+            # 如果 tessdata 已经在 C:\tesseract 下但不是直接子目录，移动它
+            Move-Item -Path $tessdataFullPath -Destination C:\tesseract\tessdata -Force
           }
-          # 最终验证
+
+          # 验证关键文件
           if (!(Test-Path "C:\tesseract\tesseract.exe")) { Write-Error "tesseract.exe 未就位"; exit 1 }
           if (!(Test-Path "C:\tesseract\tessdata\eng.traineddata")) { Write-Error "eng.traineddata 未找到"; exit 1 }
-
-      - name: 打包 CT 扫描主程序
-        run: |
-          pyinstaller --onefile --windowed --name CT_Scan_Tool 2D_scan.py `
-            --add-binary "C:\tesseract\tesseract.exe;." `
-            --add-binary "C:\tesseract\tessdata\eng.traineddata;tessdata"
-
-      - name: 打包坐标抓取器
-        run: pyinstaller --onefile --windowed --name GetCoords get_coords.py
-
-      - name: 上传 CT_Scan_Tool
-        uses: actions/upload-artifact@v6
-        with:
-          name: CT_Scan_Tool
-          path: dist/CT_Scan_Tool.exe
-
-      - name: 上传 GetCoords
-        uses: actions/upload-artifact@v6
-        with:
-          name: GetCoords
-          path: dist/GetCoords.exe
+          Write-Host "Tesseract 准备就绪，语言包已包含"
