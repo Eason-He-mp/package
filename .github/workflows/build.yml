@@ -27,16 +27,16 @@ jobs:
         shell: pwsh
         run: |
           Expand-Archive -Path "Tesseract-OCR.zip" -DestinationPath C:\tesseract -Force
-          # 验证文件直接存在
-          if (!(Test-Path "C:\tesseract\tesseract.exe")) { Write-Error "tesseract.exe 未找到"; exit 1 }
-          if (!(Test-Path "C:\tesseract\tessdata\eng.traineddata")) { Write-Error "eng.traineddata 未找到"; exit 1 }
+          # 验证实际路径（ZIP 内包含 Tesseract-OCR 文件夹）
+          if (!(Test-Path "C:\tesseract\Tesseract-OCR\tesseract.exe")) { Write-Error "tesseract.exe 未找到"; exit 1 }
+          if (!(Test-Path "C:\tesseract\Tesseract-OCR\tessdata\eng.traineddata")) { Write-Error "eng.traineddata 未找到"; exit 1 }
           Write-Host "Tesseract 验证通过"
 
       - name: 打包 CT 扫描主程序
         run: |
           pyinstaller --onefile --windowed --name CT_Scan_Tool 2D_scan.py `
-            --add-binary "C:\tesseract\tesseract.exe;." `
-            --add-binary "C:\tesseract\tessdata\eng.traineddata;tessdata"
+            --add-binary "C:\tesseract\Tesseract-OCR\tesseract.exe;." `
+            --add-binary "C:\tesseract\Tesseract-OCR\tessdata\eng.traineddata;tessdata"
 
       - name: 打包坐标抓取器
         run: pyinstaller --onefile --windowed --name GetCoords get_coords.py
