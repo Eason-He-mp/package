@@ -23,34 +23,24 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: 解压并准备 32 位 Tesseract
+      - name: 解压 32 位 Tesseract 便携版
         shell: pwsh
         run: |
           $zipPath = "Tesseract-OCR.zip"
           if (!(Test-Path $zipPath)) { Write-Error "ZIP 文件未找到: $zipPath"; exit 1 }
-          Expand-Archive -Path $zipPath -DestinationPath C:\tesseract
+          Expand-Archive -Path $zipPath -DestinationPath C:\tesseract -Force
 
-          # 查找 tesseract.exe 并确保其在 C:\tesseract 根目录
-          $exe = Get-ChildItem -Path C:\tesseract -Recurse -Name "tesseract.exe" | Select-Object -First 1
-          if (-not $exe) { Write-Error "tesseract.exe 未在解压文件中找到"; exit 1 }
-          $exeFullPath = Join-Path C:\tesseract $exe
-          if ($exeFullPath -ne "C:\tesseract\tesseract.exe") {
-            Move-Item -Path $exeFullPath -Destination C:\tesseract\tesseract.exe -Force
+          # 验证 tesseract.exe 直接位于 C:\tesseract 根目录
+          if (!(Test-Path "C:\tesseract\tesseract.exe")) { 
+            Write-Error "tesseract.exe 未在 C:\tesseract 根目录找到"
+            exit 1
           }
-
-          # 查找 tessdata 文件夹并确保其在 C:\tesseract 根目录
-          $tessdataDir = Get-ChildItem -Path C:\tesseract -Recurse -Directory -Name "tessdata" | Select-Object -First 1
-          if (-not $tessdataDir) { Write-Error "tessdata 文件夹未找到"; exit 1 }
-          $tessdataFullPath = Join-Path C:\tesseract $tessdataDir
-          if ($tessdataFullPath -ne "C:\tesseract\tessdata") {
-            # 如果 tessdata 已经在 C:\tesseract 下但不是直接子目录，移动它
-            Move-Item -Path $tessdataFullPath -Destination C:\tesseract\tessdata -Force
+          # 验证 tessdata 文件夹及 eng.traineddata 文件
+          if (!(Test-Path "C:\tesseract\tessdata\eng.traineddata")) {
+            Write-Error "C:\tesseract\tessdata\eng.traineddata 未找到"
+            exit 1
           }
-
-          # 验证关键文件
-          if (!(Test-Path "C:\tesseract\tesseract.exe")) { Write-Error "tesseract.exe 未就位"; exit 1 }
-          if (!(Test-Path "C:\tesseract\tessdata\eng.traineddata")) { Write-Error "eng.traineddata 未找到"; exit 1 }
-          Write-Host "Tesseract 准备就绪，语言包已包含"
+          Write-Host "Tesseract 准备就绪"
 
       - name: 打包 CT 扫描主程序
         run: |
