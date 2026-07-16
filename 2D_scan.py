@@ -28,15 +28,36 @@ import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 import pyautogui
 from pynput import keyboard as pynput_keyboard
+import pytesseract
+from PIL import Image
 
 # 禁用 PyAutoGUI 的故障安全机制（原为鼠标移到角落触发停止）
 # 因为使用 Esc 热键手动停止，故关闭此功能避免误触发
 pyautogui.FAILSAFE = False
 
+#Tesseract 路径设置
+def get_tesseract_path():
+    """获取 Tesseract 可执行文件路径，并设置环境变量"""
+    if getattr(sys, 'frozen', False):
+        base_dir = sys._MEIPASS
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    tesseract_exe = os.path.join(base_dir, 'tesseract.exe')
+    tessdata_dir = os.path.join(base_dir, 'tessdata')
+    os.environ['TESSDATA_PREFIX'] = tessdata_dir
+    if os.path.exists(tesseract_exe):
+        return tesseract_exe
+    else:
+        # 回退到系统默认路径（开发环境）
+        return r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+pytesseract.pytesseract.tesseract_cmd = get_tesseract_path()
+
 # ============================================================
 # 1. 配置文件加载
 # ============================================================
 CONFIG_FILE = "config.json"
+
 
 def load_config():
     """从 config.json 读取窗口标题、控件坐标和 Fiji 可执行文件路径"""
@@ -73,6 +94,10 @@ def load_config():
 
 # 加载配置
 config = load_config()
+# OCR 坐标捕捉区域
+COORD_DISPLAY = config.get("coordinate_display", {})
+X_AREA = tuple(COORD_DISPLAY.get("x_area", []))
+Y_AREA = tuple(COORD_DISPLAY.get("y_area", []))
 
 # 窗口标题
 CT_WINDOW_TITLE = config["window"]["title"]
@@ -328,8 +353,52 @@ def run_scan(params):
         root.after(0, lambda err=str(e): messagebox.showerror("错误", err))
     finally:
         root.after(0, root.deiconify)   # 确保主窗口恢复显示
+# ============================================================
+# ····· OCR采集坐标
+# ============================================================
+def ocr_number(region):
+    """截图指定区域，识别数字，返回保留1位小数的字符串，失败返回空"""
+    try:
+        img = pyautogui.screenshot(region=region)
+        gray = img.convert('L')
+        config = r'--psm 7 -c tessedit_char_whitelist=0123456789.-'
+        text = pytesseract.image_to_string(gray, config=config).strip()
+        num = float(text)
+        return f"{num:.1f}"
+    except Exception:
+        return ""
 
+def capture_start_coords():
+    """捕捉当前显示的 X、Y 坐标，填入起点输入框"""
+    if not X_AREA or not Y_AREA:
+        messagebox.showerror("配置错误", "请在 config.json 中设置坐标显示区域")
+        return
+    x_val = ocr_number(X_AREA)
+    y_val = ocr_number(Y_AREA)
+    if x_val:
+        var_Xstart.set(x_val)
+    else:
+        messagebox.showwarning("识别失败", "未能识别 X 坐标")
+    if y_val:
+        var_Ystart.set(y_val)
+    else:
+        messagebox.showwarning("识别失败", "未能识别 Y 坐标")
 
+def capture_end_coords():
+    """捕捉当前显示的 X、Y 坐标，填入终点输入框"""
+    if not X_AREA or not Y_AREA:
+        messagebox.showerror("配置错误", "请在 config.json 中设置坐标显示区域")
+        return
+    x_val = ocr_number(X_AREA)
+    y_val = ocr_number(Y_AREA)
+    if x_val:
+        var_Xend.set(x_val)
+    else:
+        messagebox.showwarning("识别失败", "未能识别 X 坐标")
+    if y_val:
+        var_Yend.set(y_val)
+    else:
+        messagebox.showwarning("识别失败", "未能识别 Y 坐标")
 
 # ============================================================
 # 6. 拼接相关函数
@@ -630,17 +699,19 @@ var_Integration.trace_add('write', update_capture_wait_display)
 frame = tk.LabelFrame(root, text="扫描范围与参数", padx=10, pady=10)
 frame.pack(padx=10, pady=5, fill="x")
 
-# 第一行：X 起点/终点
+# 第一行：X 起点/终点 + 起点捕捉按钮
 tk.Label(frame, text="X 轴起点 (mm):").grid(row=0, column=0, sticky="e")
 tk.Entry(frame, textvariable=var_Xstart, width=8).grid(row=0, column=1)
 tk.Label(frame, text="X 轴终点 (mm):").grid(row=0, column=2, sticky="e", padx=(20,0))
 tk.Entry(frame, textvariable=var_Xend, width=8).grid(row=0, column=3)
+tk.Button(frame, text="起点捕捉", width=10, command=capture_start_coords).grid(row=0, column=4, padx=(10,0), sticky="w")
 
-# 第二行：Y 起点/终点
+# 第二行：Y 起点/终点 + 终点捕捉按钮
 tk.Label(frame, text="Y 轴起点 (mm):").grid(row=1, column=0, sticky="e")
 tk.Entry(frame, textvariable=var_Ystart, width=8).grid(row=1, column=1)
 tk.Label(frame, text="Y 轴终点 (mm):").grid(row=1, column=2, sticky="e", padx=(20,0))
 tk.Entry(frame, textvariable=var_Yend, width=8).grid(row=1, column=3)
+tk.Button(frame, text="终点捕捉", width=10, command=capture_end_coords).grid(row=1, column=4, padx=(10,0), sticky="w")
 
 # 第三行：视野大小 + 重叠比例
 tk.Label(frame, text="视野大小 (mm):").grid(row=2, column=0, sticky="e")
