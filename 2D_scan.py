@@ -357,12 +357,20 @@ def run_scan(params):
 # ····· OCR采集坐标
 # ============================================================
 def ocr_number(region):
-    """截图指定区域，识别数字，返回保留1位小数的字符串，失败返回空"""
+    """截图区域，识别带符号的数字，返回保留1位小数的字符串"""
     try:
         img = pyautogui.screenshot(region=region)
         gray = img.convert('L')
-        config = r'--psm 7 -c tessedit_char_whitelist=0123456789.-'
-        text = pytesseract.image_to_string(gray, config=config).strip()
+        # 二值化：阈值127，适用于白底黑字；若是黑底白字，可改为 lambda x: 255 if x > 127 else 0
+        bw = gray.point(lambda x: 0 if x < 127 else 255, '1')
+        # 调试时可保存图片查看
+        # bw.save('debug_ocr.png')
+
+        # 白名单：数字、小数点、负号、正号（允许可能带入的字母X Y，但后面会清除）
+        config = r'--psm 7 -c tessedit_char_whitelist=0123456789.-+ XY'
+        text = pytesseract.image_to_string(bw, config=config).strip()
+        # 清除可能误识别的字母和空格
+        text = text.replace('X', '').replace('Y', '').replace(' ', '')
         num = float(text)
         return f"{num:.1f}"
     except Exception:
