@@ -482,6 +482,8 @@ def stitch_images():
         f"regression_threshold=0.30 "
         f"max/avg_displacement_threshold=2.50 "
         f"absolute_displacement_threshold=3.50 "
+        f"compute_overlap "
+        f"subpixel_accuracy "
         f"computation_parameters=[Save memory (but be slower)] "
         f"image_output=[Write to disk] "
         f"output_directory=[{safe_dir}] "
