@@ -364,7 +364,7 @@ def ocr_number(region):
         # 二值化：阈值127，适用于白底黑字；若是黑底白字，可改为 lambda x: 255 if x > 127 else 0
         bw = gray.point(lambda x: 0 if x < 127 else 255, '1')
         # 调试时可保存图片查看
-        # bw.save('debug_ocr.png')
+        bw.save('debug_ocr.png')
 
         # 白名单：数字、小数点、负号、正号（允许可能带入的字母X Y，但后面会清除）
         config = r'--psm 7 -c tessedit_char_whitelist=0123456789.-+ XY'
