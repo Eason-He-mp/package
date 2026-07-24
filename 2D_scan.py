@@ -357,23 +357,37 @@ def run_scan(params):
 # ····· OCR采集坐标
 # ============================================================
 def ocr_number(region):
-    """截图区域，识别带符号的数字，返回保留1位小数的字符串"""
     try:
-        img = pyautogui.screenshot(region=region)
-        gray = img.convert('L')
-        # 二值化：阈值127，适用于白底黑字；若是黑底白字，可改为 lambda x: 255 if x > 127 else 0
-        bw = gray.point(lambda x: 0 if x < 127 else 255, '1')
-        # 调试时可保存图片查看
-        bw.save('debug_ocr.png')
-
-        # 白名单：数字、小数点、负号、正号（允许可能带入的字母X Y，但后面会清除）
-        config = r'--psm 7 -c tessedit_char_whitelist=0123456789.-+ XY'
+        img = pyautogui.screenshot(region=region).convert('L')  # 灰度
+        # 计算 Otsu 阈值（纯 Python 实现）
+        hist = img.histogram()
+        total = sum(hist)
+        sumB = 0
+        wB = 0
+        maximum = 0.0
+        threshold = 127
+        for t in range(256):
+            wB += hist[t]               # 背景像素数
+            if wB == 0:
+                continue
+            wF = total - wB             # 前景像素数
+            if wF == 0:
+                break
+            sumB += t * hist[t]
+            mB = sumB / wB              # 背景平均灰度
+            mF = (sum(hist[i] * i for i in range(t+1, 256))) / wF  # 前景平均灰度
+            between = wB * wF * (mB - mF) ** 2
+            if between >= maximum:
+                maximum = between
+                threshold = t
+        # 应用阈值，假设数字比背景深（常见）
+        bw = img.point(lambda x: 0 if x < threshold else 255, '1')
+        # 如果数字比背景浅（亮底黑字反过来），可尝试反转
+        # bw = img.point(lambda x: 255 if x < threshold else 0, '1')
+        config = '--psm 7 -c tessedit_char_whitelist=0123456789.-'
         text = pytesseract.image_to_string(bw, config=config).strip()
-        # 清除可能误识别的字母和空格
-        text = text.replace('X', '').replace('Y', '').replace(' ', '')
-        num = float(text)
-        return f"{num:.1f}"
-    except Exception:
+        return f"{float(text):.1f}"
+    except:
         return ""
 
 def capture_start_coords():
