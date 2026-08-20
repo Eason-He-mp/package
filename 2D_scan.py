@@ -467,35 +467,34 @@ def stitch_images():
                 missing.append(j * orig_Nx + i + 1)
     missing_str = ",".join(str(t) for t in missing) if missing else ""
 
-    # ---------- 生成 ImageJ 宏（Write to disk）----------
-    macro_args = (
-        f"type=[Grid: row-by-row] "
-        f"order=[Right & Down                ] "
-        f"grid_size_x={orig_Nx} "
-        f"grid_size_y={orig_Ny} "
-        f"tile_overlap={int(overlap*100)} "
-        f"first_file_index_i=1 "
-        f"directory=[{safe_dir}] "
-        f"file_names={file_template} "
-        f"output_textfile_name=TileConfiguration.txt "
-        f"fusion_method=[Linear Blending] "
-        f"regression_threshold=0.30 "
-        f"max/avg_displacement_threshold=2.50 "
-        f"absolute_displacement_threshold=3.50 "
-        f"compute_overlap "
-        f"subpixel_accuracy "
-        f"computation_parameters=[Save memory (but be slower)] "
-        f"image_output=[Write to disk] "
-        f"output_directory=[{safe_dir}] "
-    )
+        # ---------- 生成 ImageJ 宏（多行拼接参数，避免单行过长）----------
+    # 注意：order 参数中特意保留了大量空格，请勿删除（防止 Notepad 换行解析错误）
+    script_lines = []
+    script_lines.append('args = "type=[Grid: row-by-row] "')
+    script_lines.append('args = args + "order=[Right & Down                ] "')
+    script_lines.append(f'args = args + "grid_size_x={orig_Nx} "')
+    script_lines.append(f'args = args + "grid_size_y={orig_Ny} "')
+    script_lines.append(f'args = args + "tile_overlap={int(overlap*100)} "')
+    script_lines.append('args = args + "first_file_index_i=1 "')
+    script_lines.append(f'args = args + "directory=[{safe_dir}] "')
+    script_lines.append(f'args = args + "file_names={file_template} "')
+    script_lines.append('args = args + "output_textfile_name=TileConfiguration.txt "')
+    script_lines.append('args = args + "fusion_method=[Linear Blending] "')
+    script_lines.append('args = args + "regression_threshold=0.30 "')
+    script_lines.append('args = args + "max/avg_displacement_threshold=2.50 "')
+    script_lines.append('args = args + "absolute_displacement_threshold=3.50 "')
+    script_lines.append('args = args + "compute_overlap "')
+    script_lines.append('args = args + "subpixel_accuracy "')
+    script_lines.append('args = args + "computation_parameters=[Save memory (but be slower)] "')
+    script_lines.append('args = args + "image_output=[Write to disk] "')
+    script_lines.append(f'args = args + "output_directory=[{safe_dir}] "')
     if missing_str:
-        macro_args += f"missing_tiles=[{missing_str}]"
+        script_lines.append(f'args = args + "missing_tiles=[{missing_str}] "')
 
-    macro_content = (
-        f'run("Grid/Collection stitching", "{macro_args}");\n'
-        f'run("Quit");\n'
-    )
+    script_lines.append('run("Grid/Collection stitching", args);')
+    script_lines.append('run("Quit");')
 
+    macro_content = "\n".join(script_lines) + "\n"
     # ---------- 执行 Fiji (headless) ----------
     macro_file = None
     try:
