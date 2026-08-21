@@ -9,7 +9,7 @@
   - 行优先扫描：Y 递增，X 递减，中心越过终点保证覆盖
   - 扫描完成后可选择立即拼接或稍后拼接（使用 ImageJ/Fiji）
   - 拼接时动态生成宏，调用 Fiji 命令行执行，通过 fused.tif 重命名获取结果
-  - 图形化矩阵选择：保留左上角区域，丢弃边缘冗余块
+  - 图形化矩阵选择：保留左上角区域，å丢弃边缘冗余块
   - Esc 紧急停止，停止后鼠标移至 (1200, 600)
   - 扫描时隐藏主窗口
 依赖：pyautogui, pynput, tkinter, subprocess, tempfile, shutil, json, os, threading, time, math
@@ -467,7 +467,7 @@ def stitch_images():
                 missing.append(j * orig_Nx + i + 1)
     missing_str = ",".join(str(t) for t in missing) if missing else ""
 
-        # ---------- 生成 ImageJ 宏（多行拼接参数，避免单行过长）----------
+    # ---------- 生成 ImageJ 宏（多行拼接参数，避免单行过长）----------
     # 注意：order 参数中特意保留了大量空格，请勿删除（防止 Notepad 换行解析错误）
     script_lines = []
     script_lines.append('args = "type=[Grid: row-by-row] "')
@@ -495,6 +495,7 @@ def stitch_images():
     script_lines.append('run("Quit");')
 
     macro_content = "\n".join(script_lines) + "\n"
+
     # ---------- 执行 Fiji (headless) ----------
     macro_file = None
     try:
@@ -545,6 +546,7 @@ def stitch_images():
             os.remove(macro_file)
 
     # ---------- 查找并重命名结果文件 ----------
+    # 注意：文件名可能为 img_t1_z1_c1.tif 或 fused.tif，请根据实际 Fiji 输出调整
     possible_names = ["img_t1_z1_c1"]
     found_file = None
     for name in possible_names:
