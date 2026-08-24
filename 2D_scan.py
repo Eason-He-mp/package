@@ -417,7 +417,10 @@ def stitch_images():
     col_var.trace_add('write', lambda *a: draw_grid())
     row_var.trace_add('write', lambda *a: draw_grid())
     draw_grid()
-
+        # 新增：亚像素精度复选框
+    subpixel_var = tk.BooleanVar(value=False)   # 默认不启用
+    tk.Checkbutton(dlg, text="启用亚像素精度", variable=subpixel_var).pack(pady=5)
+  
     btn_frame = tk.Frame(dlg)
     btn_frame.pack(pady=10)
     result = {"confirmed": False, "nx": orig_Nx, "ny": orig_Ny}
@@ -502,7 +505,8 @@ def stitch_images():
             script_lines.append('args = args + "max/avg_displacement_threshold=2.50 "')
             script_lines.append('args = args + "absolute_displacement_threshold=3.50 "')
             script_lines.append('args = args + "compute_overlap "')
-            script_lines.append('args = args + "subpixel_accuracy "')
+            if subpixel_var.get():
+                script_lines.append('args = args + "subpixel_accuracy "')
             script_lines.append('args = args + "computation_parameters=[Save memory (but be slower)] "')
             script_lines.append('args = args + "image_output=[Write to disk] "')
             script_lines.append(f'args = args + "output_directory=[{safe_dir}] "')
@@ -698,11 +702,9 @@ tk.Label(frame2, text="(自动追加三位编号)").pack(side="left")
 btn_frame = tk.Frame(root)
 btn_frame.pack(pady=5)
 tk.Button(btn_frame, text="开始扫描", width=12, command=lambda: start_scan_thread()).pack(side="left", padx=5)
-tk.Button(btn_frame, text="停止", width=8, command=lambda: set_stop()).pack(side="left", padx=5)
 # 拼接按钮
 btn_stitch = tk.Button(btn_frame, text="拼接图像", width=10, command=stitch_images)
 btn_stitch.pack(side="left", padx=5)
-tk.Button(btn_frame, text="退出", width=8, command=root.quit).pack(side="left", padx=5)
 
 # 状态栏
 tk.Label(root, textvariable=status_var, bd=1, relief="sunken", anchor="w").pack(fill="x", padx=10, pady=5)
@@ -767,7 +769,14 @@ def start_scan_thread():
         'ImageDir': image_dir
     }
 
-   
+       # 扫描前确认弹窗
+    confirm_msg = (
+        "请确认以下事项：\n\n"
+        "1. 已在目标路径中保存一张图片\n"
+        "2. 已手动调整对比度\n"
+        "3. 在扫描过程中按“ESC”键停止扫描并退出到主界面"
+    )
+    messagebox.showinfo("扫描前确认", confirm_msg)
     t = threading.Thread(target=run_scan, args=(params,), daemon=True)
     t.start()
 
