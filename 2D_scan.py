@@ -477,7 +477,7 @@ def stitch_images():
     script_lines.append(f'args = args + "tile_overlap={int(overlap*100)} "')
     script_lines.append('args = args + "first_file_index_i=1 "')
     script_lines.append(f'args = args + "directory=[{safe_dir}] "')
-    script_lines.append(f'args = args + "file_names={file_template} "')
+    script_lines.append(f'args = args + "file_names=[{file_template}] "')
     script_lines.append('args = args + "output_textfile_name=TileConfiguration.txt "')
     script_lines.append('args = args + "fusion_method=[Linear Blending] "')
     script_lines.append('args = args + "regression_threshold=0.30 "')
