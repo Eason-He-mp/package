@@ -372,6 +372,7 @@ def stitch_images():
     dlg.resizable(False, False)
     dlg.grab_set()
 
+    # 顶部控制区（统一使用 grid）
     ctrl_frame = tk.Frame(dlg)
     ctrl_frame.pack(pady=10)
 
@@ -385,10 +386,13 @@ def stitch_images():
     row_spin = tk.Spinbox(ctrl_frame, from_=1, to=orig_Ny, textvariable=row_var, width=5)
     row_spin.grid(row=0, column=3, padx=5)
 
-    # 亚像素精度复选框
+    # 亚像素精度复选框（放在同一 ctrl_frame 的下一行，避免混用 pack/grid）
     subpixel_var = tk.BooleanVar(value=False)
-    tk.Checkbutton(dlg, text="启用亚像素精度", variable=subpixel_var).grid(row=1, column=0, columnspan=4, pady=5)
+    tk.Checkbutton(ctrl_frame, text="启用亚像素精度", variable=subpixel_var).grid(
+        row=1, column=0, columnspan=4, pady=5
+    )
 
+    # 预览区（使用 pack 独立添加）
     preview_frame = tk.Frame(dlg, bg="white", relief="ridge", bd=2)
     preview_frame.pack(padx=10, pady=5)
 
@@ -422,8 +426,10 @@ def stitch_images():
     row_var.trace_add('write', lambda *a: draw_grid())
     draw_grid()
 
+    # 按钮区（使用 pack）
     btn_frame = tk.Frame(dlg)
     btn_frame.pack(pady=10)
+
     result = {"confirmed": False, "nx": orig_Nx, "ny": orig_Ny}
 
     def confirm():
@@ -493,13 +499,13 @@ def stitch_images():
 
             # 2. 生成宏，使用临时目录和新的文件模板
             safe_dir = temp_dir.replace('\\', '/')
-            file_template = f"{prefix}{{iii}}{ext}"   # 与复制后的文件名匹配
+            file_template = f"{prefix}{{iii}}{ext}"
 
             script_lines = []
             script_lines.append('args = "type=[Grid: row-by-row] "')
             script_lines.append('args = args + "order=[Right & Down                ] "')
-            script_lines.append(f'args = args + "grid_size_x={Nx_stitch} "')   # 注意使用 Nx_stitch
-            script_lines.append(f'args = args + "grid_size_y={Ny_stitch} "')   # 注意使用 Ny_stitch
+            script_lines.append(f'args = args + "grid_size_x={Nx_stitch} "')
+            script_lines.append(f'args = args + "grid_size_y={Ny_stitch} "')
             script_lines.append(f'args = args + "tile_overlap={int(overlap*100)} "')
             script_lines.append('args = args + "first_file_index_i=1 "')
             script_lines.append(f'args = args + "directory=[{safe_dir}] "')
