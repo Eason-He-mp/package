@@ -344,7 +344,7 @@ def ask_stitch_after_scan():
         status_var.set("就绪（可点击“拼接图像”按钮进行拼接）")
 
 def stitch_images():
-    """执行拼接操作（headless + Write to disk，结果另存为 JPG）"""
+    """执行拼接操作（临时目录方案，确保只拼接所选区域，带进度条）"""
     if not last_scan_params:
         messagebox.showwarning("无扫描参数", "请先执行一次完整扫描。")
         return
@@ -385,6 +385,10 @@ def stitch_images():
     row_spin = tk.Spinbox(ctrl_frame, from_=1, to=orig_Ny, textvariable=row_var, width=5)
     row_spin.grid(row=0, column=3, padx=5)
 
+    # 亚像素精度复选框
+    subpixel_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(dlg, text="启用亚像素精度", variable=subpixel_var).grid(row=1, column=0, columnspan=4, pady=5)
+
     preview_frame = tk.Frame(dlg, bg="white", relief="ridge", bd=2)
     preview_frame.pack(padx=10, pady=5)
 
@@ -417,10 +421,7 @@ def stitch_images():
     col_var.trace_add('write', lambda *a: draw_grid())
     row_var.trace_add('write', lambda *a: draw_grid())
     draw_grid()
-        # 新增：亚像素精度复选框
-    subpixel_var = tk.BooleanVar(value=False)   # 默认不启用
-    tk.Checkbutton(dlg, text="启用亚像素精度", variable=subpixel_var).pack(pady=5)
-  
+
     btn_frame = tk.Frame(dlg)
     btn_frame.pack(pady=10)
     result = {"confirmed": False, "nx": orig_Nx, "ny": orig_Ny}
@@ -443,9 +444,7 @@ def stitch_images():
     h = dlg.winfo_height()
     sw = dlg.winfo_screenwidth()
     sh = dlg.winfo_screenheight()
-    x = (sw - w) // 2
-    y = (sh - h) // 2
-    dlg.geometry(f"+{x}+{y}")
+    dlg.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
 
     root.wait_window(dlg)
     if not result["confirmed"]:
@@ -454,31 +453,16 @@ def stitch_images():
 
     Nx_stitch, Ny_stitch = result["nx"], result["ny"]
 
-       # ---------- 准备参数 ----------
-    prefix = params['prefix']
-    overlap = params['overlap']
-    safe_dir = image_dir.replace('\\', '/')
-    file_template = f"{prefix}{{iii}}.jpg"
-
-    # 计算缺失的 tile
-    missing = []
-    for j in range(orig_Ny):
-        for i in range(orig_Nx):
-            if i >= Nx_stitch or j >= Ny_stitch:
-                missing.append(j * orig_Nx + i + 1)
-    missing_str = ",".join(str(t) for t in missing) if missing else ""
-
-    # 准备进度窗口
+    # ---------- 准备进度窗口 ----------
     progress_win = tk.Toplevel(root)
     progress_win.title("拼接进行中")
     progress_win.resizable(False, False)
-    progress_win.grab_set()  # 模态，防止用户操作其他窗口
+    progress_win.grab_set()
     tk.Label(progress_win, text="正在拼接图像，请稍候...", font=("Arial", 12)).pack(pady=10)
     progress_bar = ttk.Progressbar(progress_win, mode='indeterminate', length=300)
     progress_bar.pack(pady=10)
-    progress_bar.start(10)  # 启动动画
+    progress_bar.start(10)
 
-    # 居中进度窗口
     progress_win.update_idletasks()
     w = progress_win.winfo_width()
     h = progress_win.winfo_height()
@@ -486,15 +470,36 @@ def stitch_images():
     sh = progress_win.winfo_screenheight()
     progress_win.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
 
-    # 定义后台执行的函数
+    # ---------- 后台执行拼接 ----------
     def perform_stitch():
+        temp_dir = None
         try:
-            # ---------- 生成 ImageJ 宏 ----------
+            # 1. 创建临时目录，复制选中的图像并重新编号
+            prefix = params['prefix']
+            overlap = params['overlap']
+            ext = ".jpg"  # 根据实际图像格式修改
+            temp_dir = tempfile.mkdtemp(prefix="stitch_")
+            for j in range(Ny_stitch):
+                for i in range(Nx_stitch):
+                    src_idx = j * orig_Nx + i + 1
+                    src_name = f"{prefix}{src_idx:03d}{ext}"
+                    src_path = os.path.join(image_dir, src_name)
+                    dst_idx = j * Nx_stitch + i + 1
+                    dst_name = f"{prefix}{dst_idx:03d}{ext}"
+                    dst_path = os.path.join(temp_dir, dst_name)
+                    if not os.path.isfile(src_path):
+                        raise Exception(f"未找到图像文件：{src_name}")
+                    shutil.copy2(src_path, dst_path)
+
+            # 2. 生成宏，使用临时目录和新的文件模板
+            safe_dir = temp_dir.replace('\\', '/')
+            file_template = f"{prefix}{{iii}}{ext}"   # 与复制后的文件名匹配
+
             script_lines = []
             script_lines.append('args = "type=[Grid: row-by-row] "')
             script_lines.append('args = args + "order=[Right & Down                ] "')
-            script_lines.append(f'args = args + "grid_size_x={orig_Nx} "')
-            script_lines.append(f'args = args + "grid_size_y={orig_Ny} "')
+            script_lines.append(f'args = args + "grid_size_x={Nx_stitch} "')   # 注意使用 Nx_stitch
+            script_lines.append(f'args = args + "grid_size_y={Ny_stitch} "')   # 注意使用 Ny_stitch
             script_lines.append(f'args = args + "tile_overlap={int(overlap*100)} "')
             script_lines.append('args = args + "first_file_index_i=1 "')
             script_lines.append(f'args = args + "directory=[{safe_dir}] "')
@@ -510,14 +515,12 @@ def stitch_images():
             script_lines.append('args = args + "computation_parameters=[Save memory (but be slower)] "')
             script_lines.append('args = args + "image_output=[Write to disk] "')
             script_lines.append(f'args = args + "output_directory=[{safe_dir}] "')
-            if missing_str:
-                script_lines.append(f'args = args + "missing_tiles=[{missing_str}] "')
 
             script_lines.append('run("Grid/Collection stitching", args);')
             script_lines.append('run("Quit");')
             macro_content = "\n".join(script_lines) + "\n"
 
-            # 写宏文件
+            # 3. 写宏文件并执行 Fiji
             macro_file = None
             try:
                 with tempfile.NamedTemporaryFile(mode="w", suffix=".ijm", delete=False, encoding="utf-8") as f:
@@ -526,47 +529,52 @@ def stitch_images():
             except Exception as e:
                 raise Exception(f"宏生成失败: {e}")
 
-            # 执行 Fiji
             try:
                 cmd = [fiji_exe, "--headless", "--console", "-macro", macro_file]
-                log_path = os.path.join(image_dir, "fiji_output.log")
+                log_path = os.path.join(temp_dir, "fiji_output.log")
                 with open(log_path, "w", encoding="utf-8") as log:
-                    result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, timeout=600)
-                if result.returncode != 0:
+                    result_proc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, timeout=600)
+                if result_proc.returncode != 0:
                     with open(log_path, "r", encoding="utf-8") as lf:
                         log_preview = lf.read(500)
-                    raise Exception(f"Fiji 返回错误码 {result.returncode}。\n日志：{log_preview}")
+                    raise Exception(f"Fiji 返回错误码 {result_proc.returncode}。\n日志：{log_preview}")
             finally:
                 if macro_file and os.path.exists(macro_file):
                     os.remove(macro_file)
 
-            # 查找结果文件
+            # 4. 查找拼接结果（在临时目录中）
             possible_names = ["img_t1_z1_c1.tif", "fused.tif", "img_t1_z1_c1"]
             found_file = None
             for name in possible_names:
-                candidate = os.path.join(image_dir, name)
+                candidate = os.path.join(temp_dir, name)
                 if os.path.isfile(candidate):
                     found_file = candidate
                     break
             if found_file is None:
                 raise Exception("未找到拼接结果文件")
 
-            # 重命名为 Stitched_Result.tif
+            # 5. 将结果移动到原图像目录，命名为 Stitched_Result.tif
             result_temp = os.path.join(image_dir, "Stitched_Result.tif")
             if os.path.exists(result_temp):
                 os.remove(result_temp)
-            os.rename(found_file, result_temp)
+            shutil.move(found_file, result_temp)
 
-            # 成功，通知主线程
+            # 6. 清理临时目录（结果已移出）
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            temp_dir = None
+
+            # 通知主线程
             root.after(0, stitching_completed, result_temp)
+
         except Exception as e:
             root.after(0, stitching_failed, str(e))
         finally:
+            if temp_dir and os.path.isdir(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
             root.after(0, close_progress_window)
 
     def stitching_completed(result_temp):
-        # 关闭进度窗口已在 finally 中执行，但这里处理保存对话框
-        default_filename = f"{prefix}_Merge.jpg"
+        default_filename = f"{params['prefix']}_Merge.jpg"
         save_path = filedialog.asksaveasfilename(
             title="保存拼接图像",
             defaultextension=".jpg",
